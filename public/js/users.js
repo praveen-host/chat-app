@@ -32,18 +32,39 @@ function renderUsers() {
   });
 }
 
+
 function renderHeader() {
   const u = peerUser();
-  if (!u) { $('peerName').textContent = 'Chat'; $('peerStatus').textContent = ''; $('peerAv').replaceChildren(); return; }
-  const callButton = $('voiceCallBtn');
-  if (callButton) { callButton.style.display = u ? '' : 'none'; callButton.disabled = !u || !on; }
+
+  if (!u) {
+    $('peerName').textContent = 'Chat';
+    $('peerStatus').textContent = '';
+    $('peerAv').replaceChildren();
+
+    const callButton = $('voiceCallBtn');
+    if (callButton) {
+      callButton.style.display = 'none';
+      callButton.disabled = true;
+    }
+    return;
+  }
+
+  // Determine online status before using it.
   const on = online.has(u.id);
+
+  const callButton = $('voiceCallBtn');
+  if (callButton) {
+    callButton.style.display = '';
+    callButton.disabled = !on;
+  }
+
   $('peerAv').replaceChildren(avEl(u, 38, false));
   $('peerName').textContent = u.displayName;
   $('peerStatus').innerHTML = typingNow.has(u.id)
     ? '<span class="typing">typing…</span>'
     : `<span class="dot ${on ? 'on' : ''}"></span>${on ? 'Active' : 'Inactive'}`;
 }
+
 
 
 function openChat(id) {

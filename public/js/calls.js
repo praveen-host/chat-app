@@ -183,12 +183,26 @@ function initCallEvents() {
       }
     } catch { setCallStatus('Could not establish the call.'); endVoiceCall(); }
   });
+
   socket.on('call:ice', async ({ callId, candidate }) => {
-    if (!activeCall || activeCall.callId !== callId || !callPeerConnection) return;
-    if (!callPeerConnection.remoteDescription) { pendingIceCandidates.push(candidate); return; }
-    try { await callPeerConnection.addIceCandidate(candidate); }
-    catch (error) { console.warn('Could not add ICE candidate:', error); }
+    if (!activeCall || activeCall.callId !== callId || !candidate) {
+      return;
+    }
+
+    // ICE can arrive before the peer connection or remote
+    // description is ready. Keep it until it can be applied.
+    if (!callPeerConnection || !callPeerConnection.remoteDescription) {
+      pendingIceCandidates.push(candidate);
+      return;
+    }
+
+    try {
+      await callPeerConnection.addIceCandidate(candidate);
+    } catch (error) {
+      console.warn('Could not add ICE candidate:', error);
+    }
   });
+
   socket.on('call:rejected', () => { setCallStatus('Call declined'); cleanupVoiceCall(); });
   socket.on('call:busy', () => { alert('You or the other user is already in a call.'); cleanupVoiceCall(); });
   socket.on('call:offline', () => { alert('This user is offline.'); cleanupVoiceCall(); });

@@ -6,7 +6,7 @@ window.addEventListener('focus', reportVisibility);
 async function start() {
   socket = io({ auth: { token } });
   initCallEvents();
-  
+
   $('auth').style.display = 'none';
   $('app').style.display = 'flex'; $('app').classList.add('ready');
   renderMe();
@@ -14,7 +14,7 @@ async function start() {
   loadMyProfile();
   renderChat();
 
-  socket = io({ auth: { token } });
+  //socket = io({ auth: { token } });
   initPush();
   socket.on('connect', reportVisibility);                // tell the server whether this tab is in front
   socket.on('connect_error', err => { if (err.message === 'Unauthorized') expireSession(); });

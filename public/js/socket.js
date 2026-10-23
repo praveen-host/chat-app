@@ -7,20 +7,6 @@ async function start() {
   socket = io({ auth: { token } });
   initCallEvents();
 
-  $('auth').style.display = 'none';
-  $('app').style.display = 'flex'; $('app').classList.add('ready');
-  renderMe();
-  await loadUsers();
-  loadMyProfile();
-  renderChat();
-
-  initPush();
-  socket.on('connect', reportVisibility);                // tell the server whether this tab is in front
-  socket.on('connect_error', err => { if (err.message === 'Unauthorized') expireSession(); });
-  const qs = new URLSearchParams(location.search);       // opened from a notification
-  const openId = Number(qs.get('chat')), forId = Number(qs.get('to'));
-  if (openId && (!forId || forId === me.id) && users.some(u => u.id === openId)) { openChat(openId); window.history.replaceState(null, '', '/'); }
-
   /* presence & profiles */
   socket.on('presence:list', ids => {
     online.clear();
@@ -44,6 +30,22 @@ async function start() {
     renderUsers();
     renderHeader();
   });
+  
+  $('auth').style.display = 'none';
+  $('app').style.display = 'flex'; $('app').classList.add('ready');
+  renderMe();
+  await loadUsers();
+  loadMyProfile();
+  renderChat();
+
+  initPush();
+  socket.on('connect', reportVisibility);                // tell the server whether this tab is in front
+  socket.on('connect_error', err => { if (err.message === 'Unauthorized') expireSession(); });
+  const qs = new URLSearchParams(location.search);       // opened from a notification
+  const openId = Number(qs.get('chat')), forId = Number(qs.get('to'));
+  if (openId && (!forId || forId === me.id) && users.some(u => u.id === openId)) { openChat(openId); window.history.replaceState(null, '', '/'); }
+
+
 
   socket.on('profile', p => {
     if (p.id === me.id) { myProfile = { ...(myProfile || {}), ...p }; me.displayName = p.displayName; saveSession(); renderMe(); return; }

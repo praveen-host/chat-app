@@ -4,6 +4,9 @@ document.addEventListener('visibilitychange', reportVisibility);
 window.addEventListener('focus', reportVisibility);
 
 async function start() {
+  socket = io({ auth: { token } });
+  initCallEvents();
+  
   $('auth').style.display = 'none';
   $('app').style.display = 'flex'; $('app').classList.add('ready');
   renderMe();

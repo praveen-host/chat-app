@@ -95,3 +95,11 @@
 .sheet.small{max-width:320px;gap:10px;text-align:center}
 .sheet.small button{width:100%}
 @media (max-width:700px){.sheet.small{height:auto;max-width:92%;border-radius:14px}}
+
+#voiceCallBtn { flex-shrink: 0; }
+.call-sheet { align-items: center; text-align: center; gap: 16px; }
+.call-avatar { width: 76px; height: 76px; display: grid; place-items: center; border-radius: 50%; background: #e8f0ff; color: var(--accent); font-size: 32px; }
+#callStatus { color: #555; min-height: 24px; }
+.call-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+#remoteCallAudio { width: 0; height: 0; }
+@media (max-width: 700px) { .call-sheet { height: auto; max-height: 90dvh; border-radius: 14px; } }

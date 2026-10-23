@@ -35,6 +35,8 @@ function renderUsers() {
 function renderHeader() {
   const u = peerUser();
   if (!u) { $('peerName').textContent = 'Chat'; $('peerStatus').textContent = ''; $('peerAv').replaceChildren(); return; }
+  const callButton = $('voiceCallBtn');
+  if (callButton) { callButton.style.display = u ? '' : 'none'; callButton.disabled = !u || !on; }
   const on = online.has(u.id);
   $('peerAv').replaceChildren(avEl(u, 38, false));
   $('peerName').textContent = u.displayName;

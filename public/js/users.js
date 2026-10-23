@@ -14,7 +14,7 @@ function clearTyping(id) {
 function renderUsers() {
   $('list').innerHTML = '';
   [...users].sort((a, b) => (online.has(b.id) - online.has(a.id)) || a.displayName.localeCompare(b.displayName)).forEach(u => {
-    const on = online.has(u.id), typing = typingNow.has(u.id);
+    const on = online.has(Number(u.id)), typing = typingNow.has(u.id);
     const d = document.createElement('div');
     d.className = 'user' + (peer === u.id ? ' active' : '');
     d.appendChild(avEl(u, 42, true));
@@ -25,7 +25,7 @@ function renderUsers() {
     const right = document.createElement('div');
     right.innerHTML = unread[u.id] ? `<span class="badge">${unread[u.id]}</span>`
       : typing ? `<span class="sub typing">typing…</span>`
-      : `<span class="sub">${on ? 'Active' : 'Inactive'}</span>`;
+        : `<span class="sub">${on ? 'Active' : 'Inactive'}</span>`;
     d.appendChild(right);
     d.onclick = () => openChat(u.id);
     $('list').appendChild(d);
@@ -33,15 +33,16 @@ function renderUsers() {
 }
 
 
+
 function renderHeader() {
   const u = peerUser();
+  const callButton = $('voiceCallBtn');
 
   if (!u) {
     $('peerName').textContent = 'Chat';
     $('peerStatus').textContent = '';
     $('peerAv').replaceChildren();
 
-    const callButton = $('voiceCallBtn');
     if (callButton) {
       callButton.style.display = 'none';
       callButton.disabled = true;
@@ -49,10 +50,8 @@ function renderHeader() {
     return;
   }
 
-  // Determine online status before using it.
-  const on = online.has(u.id);
+  const on = online.has(Number(u.id));
 
-  const callButton = $('voiceCallBtn');
   if (callButton) {
     callButton.style.display = '';
     callButton.disabled = !on;
@@ -60,7 +59,8 @@ function renderHeader() {
 
   $('peerAv').replaceChildren(avEl(u, 38, false));
   $('peerName').textContent = u.displayName;
-  $('peerStatus').innerHTML = typingNow.has(u.id)
+
+  $('peerStatus').innerHTML = typingNow.has(Number(u.id))
     ? '<span class="typing">typing…</span>'
     : `<span class="dot ${on ? 'on' : ''}"></span>${on ? 'Active' : 'Inactive'}`;
 }

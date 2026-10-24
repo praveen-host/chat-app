@@ -14,6 +14,7 @@ async function createSchema() {
     username VARCHAR(50) NOT NULL UNIQUE,
     password_hash VARCHAR(100) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
+  await addColumn('ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP NULL DEFAULT NULL');
   // Profile fields
   await addColumn(`ALTER TABLE users
     ADD COLUMN display_name VARCHAR(50) NULL, ADD COLUMN full_name VARCHAR(100) NULL,
@@ -37,6 +38,26 @@ async function createSchema() {
   await addColumn('ALTER TABLE offline_messages ADD COLUMN client_id VARCHAR(64) NULL');
   await addColumn('ALTER TABLE offline_messages ADD COLUMN image LONGBLOB NULL');
   await addColumn('ALTER TABLE offline_messages ADD COLUMN reply_json TEXT NULL');
+
+  // Durable message history. Messages remain here after delivery; delivery/read are separate states.
+  await pool.query(`CREATE TABLE IF NOT EXISTS messages (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    sender_id INT NOT NULL,
+    recipient_id INT NOT NULL,
+    client_id VARCHAR(64) NOT NULL,
+    body TEXT NOT NULL,
+    image LONGBLOB NULL,
+    reply_json TEXT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    delivered_at TIMESTAMP NULL DEFAULT NULL,
+    read_at TIMESTAMP NULL DEFAULT NULL,
+    deleted_at TIMESTAMP NULL DEFAULT NULL,
+    UNIQUE KEY uq_message_sender_client (sender_id, client_id),
+    INDEX idx_message_recipient_delivery (recipient_id, delivered_at, id),
+    INDEX idx_message_conversation (sender_id, recipient_id, id),
+    FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
+  )`);
 
   // Browser push subscriptions (one user can have several devices)
   await pool.query(`CREATE TABLE IF NOT EXISTS push_subscriptions (

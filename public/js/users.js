@@ -71,7 +71,7 @@ function openChat(id) {
   stopTyping(); clearPending(); replyingTo = null; openCid = null;
   peer = id; unread[id] = 0;
   $('app').classList.add('chat-open');
-  renderUsers(); renderHeader(); renderChat(true); markRead();
+  renderUsers(); renderHeader(); renderChat(true); loadChatHistory(id); markRead();
   if (matchMedia('(min-width:701px)').matches) $('text').focus();
 }
 function closeChat() { stopTyping(); clearPending(); replyingTo = null; openCid = null; peer = null; $('app').classList.remove('chat-open'); renderUsers(); renderHeader(); renderChat(); }

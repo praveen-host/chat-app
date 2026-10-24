@@ -19,9 +19,16 @@
 
 <div id="app">
   <div id="side">
-    <div id="sideHead"><div class="me" onclick="openProfile()" title="My profile"><span id="meAv"></span><b id="meName"></b></div>
-      <span><button id="bellBtn" class="ghost" style="display:none" onclick="enablePush()">🔔 Alerts</button>
-      <button class="ghost" onclick="logout()">Logout</button></span></div>
+    <div id="sideHead">
+      <div class="me" onclick="openProfile()" title="My profile">
+        <span id="meAv"></span>
+        <span class="me-details"><b id="meName"></b><small id="meLastLogin">Last login: loading…</small></span>
+      </div>
+      <div class="side-actions">
+        <button id="bellBtn" class="ghost icon-button" style="display:none" aria-label="Notifications" title="Notifications" onclick="enablePush()">🔔</button>
+        <button id="logoutBtn" class="ghost icon-button" aria-label="Log out" title="Log out" onclick="logout()">⇥</button>
+      </div>
+    </div>
     <div id="list"></div>
   </div>
   <div id="main">

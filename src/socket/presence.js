@@ -21,11 +21,31 @@ async function flushOffline(socket) {
             m.body, m.image, m.reply_json, m.client_id AS cid, m.created_at AS ts
      FROM offline_messages m JOIN users u ON u.id = m.sender_id
      WHERE m.recipient_id = ? ORDER BY m.id`, [socket.user.id]);
-  if (!rows.length) return;
-  const pending = rows.map(({ reply_json, ...r }) => ({ ...r, reply: reply_json ? JSON.parse(reply_json) : null }));
-  socket.emit('offline:messages', pending, async () => {
-    await pool.query('DELETE FROM offline_messages WHERE id IN (?)', [pending.map(p => p.id)]);
-  });
+  if (rows.length) {
+    const pending = rows.map(({ reply_json, ...r }) => ({ ...r, reply: reply_json ? JSON.parse(reply_json) : null }));
+    socket.emit('offline:messages', pending, async () => {
+      await pool.query('DELETE FROM offline_messages WHERE id IN (?)', [pending.map(p => p.id)]);
+    });
+  }
+
+  // Durable messages are retained for history and re-sent until the recipient acknowledges them.
+  const [stored] = await pool.query(
+    `SELECT m.sender_id AS \`from\`, COALESCE(u.display_name, u.username) AS fromName,
+            m.recipient_id AS \`to\`, m.body, m.image, m.reply_json, m.client_id AS cid,
+            m.created_at AS ts, m.deleted_at, m.delivered_at
+     FROM messages m JOIN users u ON u.id = m.sender_id
+     WHERE m.recipient_id = ? AND m.delivered_at IS NULL ORDER BY m.id LIMIT 500`,
+    [socket.user.id]);
+  if (stored.length) {
+    const queued = stored.map(({ reply_json, deleted_at, delivered_at, ...r }) => ({
+      ...r,
+      body: deleted_at ? '' : r.body,
+      image: deleted_at ? null : r.image,
+      reply: deleted_at || !reply_json ? null : JSON.parse(reply_json),
+      deleted: !!deleted_at
+    }));
+    socket.emit('offline:messages', queued, () => {});
+  }
 }
 
 module.exports = { register, flushOffline };

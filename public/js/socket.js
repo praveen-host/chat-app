@@ -9,6 +9,8 @@ async function start() {
 
   socket.on('connect', () => {
     reportVisibility();
+    retryPendingMessages();
+    if (peer != null) loadChatHistory(peer);
     const params = new URLSearchParams(location.search);
     const callId = params.get('callId');
     const callAction = params.get('callAction');

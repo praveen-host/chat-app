@@ -11,6 +11,10 @@ function register(socket) {
         `DELETE FROM offline_messages
          WHERE (sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)`,
         [me.id, peerId, peerId, me.id]);
+      await pool.query(
+        `DELETE FROM messages
+         WHERE (sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)`,
+        [me.id, peerId, peerId, me.id]);
       rt.emitToUser(peerId, 'chat:deleted', { by: me.id });
       cb({ ok: true });
     } catch (e) { console.error(e); cb({ error: 'Server error' }); }

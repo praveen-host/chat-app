@@ -10,7 +10,12 @@ if (pushSupported) {
   });
 }
 
-function setBell(label, handler) { const b = $('bellBtn'); b.style.display = 'inline-block'; b.textContent = label; b.onclick = handler; }
+function setBell(label, handler) {
+  const b = $('bellBtn');
+  b.style.display = 'inline-flex';
+  b.textContent = label.includes('Blocked') || label.includes('✕') ? '🔕' : label.includes('Sent') ? '✓' : label.includes('Retry') ? '↻' : '🔔';
+  b.title = label; b.setAttribute('aria-label', label); b.onclick = handler;
+}
 
 function b64ToU8(b64) {
   const raw = atob((b64 + '='.repeat((4 - b64.length % 4) % 4)).replace(/-/g, '+').replace(/_/g, '/'));
@@ -81,5 +86,5 @@ async function testPush() {
   const d = await r.json();
   if (!d.devices) return alert('No device is registered for this user yet. Tap Retry / reload and allow notifications.');
   if (!d.sent) return alert('Push failed: ' + d.failures.map(f => (f.status || 'error') + ' ' + f.error).join('; '));
-  const b = $('bellBtn'); b.textContent = '✓ Sent'; setTimeout(() => b.textContent = '🔔 Test', 2000);
+  const b = $('bellBtn'); b.textContent = '✓'; b.title = 'Notification test sent'; b.setAttribute('aria-label', 'Notification test sent'); setTimeout(() => setBell('🔔 Test', testPush), 2000);
 }

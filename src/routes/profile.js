@@ -13,9 +13,9 @@ const publicProfile = r => ({ id: r.id, username: r.username, displayName: r.dis
   fullName: r.full_name || '', about: r.about || '', avatarVersion: r.has_avatar ? r.avatar_version : 0 });
 
 async function loadOwnProfile(id) {
-  const [rows] = await pool.query(`SELECT ${PROFILE_COLS}, email, phone FROM users WHERE id = ?`, [id]);
+  const [rows] = await pool.query(`SELECT ${PROFILE_COLS}, email, phone, last_login_at FROM users WHERE id = ?`, [id]);
   if (!rows.length) return null;
-  return { ...publicProfile(rows[0]), email: rows[0].email || '', phone: rows[0].phone || '' };
+  return { ...publicProfile(rows[0]), email: rows[0].email || '', phone: rows[0].phone || '', lastLoginAt: rows[0].last_login_at || null };
 }
 // Tell everyone connected (live) that someone changed their profile
 const broadcastProfile = p => realtime.emitToAll('profile', { id: p.id, username: p.username, displayName: p.displayName,

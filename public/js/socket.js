@@ -4,6 +4,33 @@ document.addEventListener('visibilitychange', reportVisibility);
 window.addEventListener('focus', reportVisibility);
 
 async function start() {
+  socket = io({ auth: { token } });
+  initCallEvents();
+
+  /* presence & profiles */
+  socket.on('presence:list', ids => {
+    online.clear();
+
+    ids.forEach(id => online.add(Number(id)));
+
+    renderUsers();
+    renderHeader();
+  });
+
+  socket.on('presence', ({ id, online: isOnline }) => {
+    id = Number(id);
+
+    if (isOnline) {
+      online.add(id);
+    } else {
+      online.delete(id);
+      clearTyping(id);
+    }
+
+    renderUsers();
+    renderHeader();
+  });
+  
   $('auth').style.display = 'none';
   $('app').style.display = 'flex'; $('app').classList.add('ready');
   renderMe();
@@ -11,7 +38,6 @@ async function start() {
   loadMyProfile();
   renderChat();
 
-  socket = io({ auth: { token } });
   initPush();
   socket.on('connect', reportVisibility);                // tell the server whether this tab is in front
   socket.on('connect_error', err => { if (err.message === 'Unauthorized') expireSession(); });
@@ -19,13 +45,8 @@ async function start() {
   const openId = Number(qs.get('chat')), forId = Number(qs.get('to'));
   if (openId && (!forId || forId === me.id) && users.some(u => u.id === openId)) { openChat(openId); window.history.replaceState(null, '', '/'); }
 
-  /* presence & profiles */
-  socket.on('presence:list', ids => { online.clear(); ids.forEach(i => online.add(i)); renderUsers(); renderHeader(); });
-  socket.on('presence', ({ id, online: on }) => {
-    on ? online.add(id) : (online.delete(id), clearTyping(id));
-    if (!users.some(u => u.id === id)) return loadUsers();
-    renderUsers(); renderHeader();
-  });
+
+
   socket.on('profile', p => {
     if (p.id === me.id) { myProfile = { ...(myProfile || {}), ...p }; me.displayName = p.displayName; saveSession(); renderMe(); return; }
     const i = users.findIndex(u => u.id === p.id);

@@ -10,6 +10,7 @@ module.exports = function attachSockets(httpServer) {
     require('./receipts').register(socket);
     require('./messages').register(socket);
     require('./chat').register(socket);
+    require('./calls').register(socket); // register call events last so that the other handlers can be used to set up the call
     // ...then deliver anything that was queued while this user was offline.
     require('./presence').flushOffline(socket).catch(e => console.error('flush error:', e));
   });

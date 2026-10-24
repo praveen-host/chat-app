@@ -32,6 +32,7 @@
         <span id="peerName">Chat</span>
         <span id="peerStatus"></span>
       </div>
+      <button id="voiceCallBtn" class="ghost" title="Voice call" onclick="startVoiceCall()">📞 Call</button>
       <button id="delBtn" class="danger" style="display:none" onclick="deleteChat()">Delete chat</button>
     </div>
     <div id="msgs"></div>
@@ -79,7 +80,20 @@
   <div id="viewerImg"></div>
   <button id="viewerClose" onclick="closeViewer()">✕</button>
 </div>
-
+<div id="callOverlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="callTitle">
+  <div class="sheet call-sheet">
+    <div class="sheetHead"><b id="callTitle">Voice call</b><button class="ghost" onclick="endVoiceCall()" aria-label="Close call">✕</button></div>
+    <div class="call-avatar" aria-hidden="true">☎</div>
+    <div id="callStatus" role="status" aria-live="polite">Ready</div>
+    <audio id="remoteCallAudio" autoplay></audio>
+    <div class="call-actions">
+      <button id="callAccept" onclick="acceptVoiceCall()">Accept</button>
+      <button id="callReject" class="danger" onclick="rejectVoiceCall()">Decline</button>
+      <button id="callMute" class="ghost" onclick="toggleCallMute()">Mute</button>
+      <button id="callEnd" class="danger" onclick="endVoiceCall()">End call</button>
+    </div>
+  </div>
+</div>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/js/core.js"></script>
 <script src="/js/auth.js"></script>
@@ -90,4 +104,5 @@
 <script src="/js/attachments.js"></script>
 <script src="/js/push.js"></script>
 <script src="/js/socket.js"></script>
+<script src="/js/calls.js"></script>
 <script src="/js/main.js"></script></body></html>

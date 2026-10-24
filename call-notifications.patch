@@ -1,0 +1,365 @@
+diff --git a/public/css/styles.css b/public/css/styles.css
+index 91b633f..f22fe07 100644
+--- a/public/css/styles.css
++++ b/public/css/styles.css
+@@ -102,4 +102,28 @@
+ #callStatus { color: #555; min-height: 24px; }
+ .call-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+ #remoteCallAudio { width: 0; height: 0; }
+-@media (max-width: 700px) { .call-sheet { height: auto; max-height: 90dvh; border-radius: 14px; } }
+\ No newline at end of file
++@media (max-width: 700px) { .call-sheet { height: auto; max-height: 90dvh; border-radius: 14px; } }
++
++/* Compact persistent in-app call bar; notifications are handled by the service worker. */
++#callOverlay.call-active {
++  display: flex !important;
++  inset: auto 18px 18px auto;
++  width: min(390px, calc(100vw - 36px));
++  background: transparent;
++  justify-content: flex-end;
++  align-items: flex-end;
++  pointer-events: none;
++  z-index: 1000;
++}
++#callOverlay.call-active .call-sheet {
++  pointer-events: auto;
++  width: 100%; max-width: none; max-height: 70vh;
++  border: 1px solid var(--line); box-shadow: 0 8px 32px #0003;
++  border-radius: 16px; padding: 14px; gap: 10px;
++}
++#callOverlay.call-active .call-avatar { width: 42px; height: 42px; font-size: 22px; }
++#callOverlay.call-active .call-actions button { min-height: 38px; }
++@media (max-width: 700px) {
++  #callOverlay.call-active { inset: auto 10px 10px 10px; width: auto; }
++  #callOverlay.call-active .call-sheet { height: auto; max-width: none; border-radius: 16px; }
++}
+diff --git a/public/index.html b/public/index.html
+index d0bd691..9d0ea99 100644
+--- a/public/index.html
++++ b/public/index.html
+@@ -89,7 +89,8 @@
+     <div class="call-actions">
+       <button id="callAccept" onclick="acceptVoiceCall()">Accept</button>
+       <button id="callReject" class="danger" onclick="rejectVoiceCall()">Decline</button>
+-      <button id="callMute" class="ghost" onclick="toggleCallMute()">Mute</button>
++      <button id="callMute" class="ghost" onclick="toggleCallMute()">Mute mic</button>
++      <button id="callSpeaker" class="ghost" onclick="toggleSpeakerMute()">Mute speaker</button>
+       <button id="callEnd" class="danger" onclick="endVoiceCall()">End call</button>
+     </div>
+   </div>
+diff --git a/public/js/calls.js b/public/js/calls.js
+index 5b90ccb..edf010f 100644
+--- a/public/js/calls.js
++++ b/public/js/calls.js
+@@ -4,6 +4,11 @@ let callPeerConnection = null;
+ let callLocalStream = null;
+ let callTimeout = null;
+ let pendingIceCandidates = [];
++let ringtoneContext = null;
++let ringtoneTimer = null;
++let speakerMuted = false;
++let microphoneMuted = false;
++let pendingNotificationAction = null;
+ 
+ const callIceConfig = {
+   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+@@ -18,18 +23,56 @@ function setCallStatus(text) {
+ }
+ function showCallUi({ incoming = false } = {}) {
+   $('callOverlay').style.display = 'flex';
++  $('callOverlay').classList.add('call-active');
+   $('callAccept').style.display = incoming ? '' : 'none';
+   $('callReject').style.display = incoming ? '' : 'none';
+   $('callMute').style.display = incoming ? 'none' : '';
+   $('callEnd').style.display = incoming ? 'none' : '';
+   $('callTitle').textContent = activeCall ? callPeerName(activeCall.peerId) : 'Voice call';
+ }
++function stopRingtone() {
++  if (ringtoneTimer) clearInterval(ringtoneTimer);
++  ringtoneTimer = null;
++  // Keep the audio context unlocked for the next incoming call.
++}
++function playRingtoneTone() {
++  if (!ringtoneContext || ringtoneContext.state !== 'running') return;
++  try {
++    const osc = ringtoneContext.createOscillator();
++    const gain = ringtoneContext.createGain();
++    osc.type = 'sine'; osc.frequency.value = 880;
++    gain.gain.setValueAtTime(0.0001, ringtoneContext.currentTime);
++    gain.gain.exponentialRampToValueAtTime(0.12, ringtoneContext.currentTime + 0.03);
++    gain.gain.setValueAtTime(0.12, ringtoneContext.currentTime + 0.22);
++    gain.gain.exponentialRampToValueAtTime(0.0001, ringtoneContext.currentTime + 0.28);
++    osc.connect(gain); gain.connect(ringtoneContext.destination);
++    osc.start(); osc.stop(ringtoneContext.currentTime + 0.3);
++  } catch (_) {}
++}
++async function unlockCallAudio() {
++  try {
++    const AudioCtx = window.AudioContext || window.webkitAudioContext;
++    if (!AudioCtx) return;
++    if (!ringtoneContext || ringtoneContext.state === 'closed') ringtoneContext = new AudioCtx();
++    if (ringtoneContext.state === 'suspended') await ringtoneContext.resume();
++  } catch (_) {}
++}
++async function startRingtone() {
++  stopRingtone();
++  await unlockCallAudio();
++  playRingtoneTone();
++  ringtoneTimer = setInterval(playRingtoneTone, 900);
++}
++// Unlock Web Audio during an ordinary user gesture so later incoming calls can ring.
++document.addEventListener('pointerdown', () => { unlockCallAudio(); }, { once: true });
++document.addEventListener('keydown', () => { unlockCallAudio(); }, { once: true });
+ function clearCallTimer() {
+   if (callTimeout) clearTimeout(callTimeout);
+   callTimeout = null;
+ }
+ function cleanupVoiceCall() {
+   clearCallTimer();
++  stopRingtone();
+   if (callPeerConnection) {
+     callPeerConnection.ontrack = null;
+     callPeerConnection.onicecandidate = null;
+@@ -44,7 +87,10 @@ function cleanupVoiceCall() {
+   if (audio) { audio.pause(); audio.srcObject = null; }
+   activeCall = null;
+   $('callOverlay').style.display = 'none';
+-  $('callMute').textContent = 'Mute';
++  $('callOverlay').classList.remove('call-active');
++  $('callMute').textContent = 'Mute mic';
++  $('callSpeaker').textContent = 'Mute speaker';
++  speakerMuted = false; microphoneMuted = false;
+ }
+ async function ensureCallMedia() {
+   if (callLocalStream) return callLocalStream;
+@@ -80,6 +126,7 @@ function ensurePeerConnection() {
+ }
+ 
+ async function startVoiceCall() {
++  await unlockCallAudio();
+   if (!peer || !socket?.connected) return alert('Open a chat and connect to the server first.');
+   if (activeCall) return;
+   if (!online.has(peer)) return alert('This user is offline. Try again when they are active.');
+@@ -96,6 +143,8 @@ async function startVoiceCall() {
+ }
+ 
+ async function acceptVoiceCall() {
++  stopRingtone();
++  await unlockCallAudio();
+   if (!activeCall || activeCall.role !== 'callee' || activeCall.status !== 'incoming') return;
+   try {
+     await ensureCallMedia();
+@@ -122,8 +171,33 @@ function toggleCallMute() {
+   const tracks = callLocalStream.getAudioTracks();
+   const shouldEnable = tracks.some(track => !track.enabled);
+   tracks.forEach(track => { track.enabled = shouldEnable; });
+-  $('callMute').textContent = shouldEnable ? 'Mute' : 'Unmute';
+-  setCallStatus(shouldEnable ? 'Connected' : 'Microphone muted');
++  microphoneMuted = !shouldEnable;
++  $('callMute').textContent = shouldEnable ? 'Mute mic' : 'Unmute mic';
++  setCallStatus(shouldEnable ? (speakerMuted ? 'Connected — speaker muted' : 'Connected') : 'Microphone muted');
++}
++
++function toggleSpeakerMute() {
++  const audio = $('remoteCallAudio');
++  if (!audio) return;
++  speakerMuted = !speakerMuted;
++  audio.muted = speakerMuted;
++  $('callSpeaker').textContent = speakerMuted ? 'Unmute speaker' : 'Mute speaker';
++  setCallStatus(speakerMuted ? 'Speaker muted' : (microphoneMuted ? 'Microphone muted' : 'Connected'));
++}
++function handleCallNotificationAction(action, callId) {
++  if (!['accept', 'reject'].includes(action)) return;
++  if (!activeCall || activeCall.callId !== callId) {
++    pendingNotificationAction = { action, callId };
++    return;
++  }
++  if (action === 'accept') acceptVoiceCall(); else rejectVoiceCall();
++}
++function processPendingCallAction() {
++  const action = pendingNotificationAction || window.__pendingCallNotificationAction;
++  if (!action || !activeCall || activeCall.callId !== action.callId) return;
++  pendingNotificationAction = null;
++  window.__pendingCallNotificationAction = null;
++  setTimeout(() => handleCallNotificationAction(action.action, action.callId), 100);
+ }
+ 
+ function initCallEvents() {
+@@ -135,6 +209,8 @@ function initCallEvents() {
+     activeCall = { callId, peerId: Number(from), role: 'callee', status: 'incoming' };
+     showCallUi({ incoming: true });
+     setCallStatus('Incoming voice call…');
++    startRingtone();
++    processPendingCallAction();
+   });
+   socket.on('call:ringing', ({ callId, to }) => {
+     if (!activeCall || activeCall.role !== 'caller') return;
+@@ -204,6 +280,7 @@ function initCallEvents() {
+   });
+ 
+   socket.on('call:rejected', () => { setCallStatus('Call declined'); cleanupVoiceCall(); });
++  socket.on('call:unavailable', () => { pendingNotificationAction = null; window.__pendingCallNotificationAction = null; cleanupVoiceCall(); alert('This call has expired or is no longer available.'); });
+   socket.on('call:busy', () => { alert('You or the other user is already in a call.'); cleanupVoiceCall(); });
+   socket.on('call:offline', () => { alert('This user is offline.'); cleanupVoiceCall(); });
+   socket.on('call:error', ({ message }) => { alert(message || 'Call could not be started.'); cleanupVoiceCall(); });
+diff --git a/public/js/push.js b/public/js/push.js
+index 2dcf038..fcfcfb8 100644
+--- a/public/js/push.js
++++ b/public/js/push.js
+@@ -5,7 +5,8 @@ if (pushSupported) {
+   navigator.serviceWorker.register('/sw.js').catch(console.error);
+   navigator.serviceWorker.addEventListener('message', e => {       // notification tapped while app is open
+     const d = e.data || {};
+-    if (d.type === 'open-chat' && (d.toId == null || d.toId === me.id) && users.some(u => u.id === d.userId)) openChat(d.userId);
++    if (d.type === 'open-chat' && (d.toId == null || Number(d.toId) === Number(me.id)) && users.some(u => Number(u.id) === Number(d.userId))) openChat(Number(d.userId));
++    if (d.type === 'call-notification-action' && typeof handleCallNotificationAction === 'function') handleCallNotificationAction(d.action, d.callId);
+   });
+ }
+ 
+diff --git a/public/js/socket.js b/public/js/socket.js
+index 9a00b34..5c965e5 100644
+--- a/public/js/socket.js
++++ b/public/js/socket.js
+@@ -7,6 +7,20 @@ async function start() {
+   socket = io({ auth: { token } });
+   initCallEvents();
+ 
++  socket.on('connect', () => {
++    reportVisibility();
++    const params = new URLSearchParams(location.search);
++    const callId = params.get('callId');
++    const callAction = params.get('callAction');
++    if (callId) {
++      socket.emit('call:resume', { callId });
++      if (callAction === 'accept' || callAction === 'reject') {
++        window.__pendingCallNotificationAction = { action: callAction, callId };
++      }
++      history.replaceState(null, '', '/');
++    }
++  }); // report visibility and resume a call opened from a notification
++
+   /* presence & profiles */
+   socket.on('presence:list', ids => {
+     online.clear();
+@@ -39,7 +53,6 @@ async function start() {
+   renderChat();
+ 
+   initPush();
+-  socket.on('connect', reportVisibility);                // tell the server whether this tab is in front
+   socket.on('connect_error', err => { if (err.message === 'Unauthorized') expireSession(); });
+   const qs = new URLSearchParams(location.search);       // opened from a notification
+   const openId = Number(qs.get('chat')), forId = Number(qs.get('to'));
+diff --git a/public/sw.js b/public/sw.js
+index 6df3930..32537c6 100644
+--- a/public/sw.js
++++ b/public/sw.js
+@@ -1,31 +1,47 @@
+ self.addEventListener('install', () => self.skipWaiting());
+ self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+ 
+-// Push from the server (sent when the recipient is offline, logged out, or has the app hidden)
+ self.addEventListener('push', event => {
+-  let d = {};
+-  try { d = event.data.json(); } catch (e) {}
+-  event.waitUntil(self.registration.showNotification(d.title || 'New message', {
+-    body: d.body || '',
+-    tag: d.fromId != null ? 'chat-' + d.fromId : 'test',   // one notification per sender
+-    renotify: true,
+-    icon: '/icon-192.png',
+-    badge: '/icon-192.png',
+-    data: { fromId: d.fromId, toId: d.toId }
+-  }));
++  event.waitUntil((async () => {
++    let d = {};
++    try { d = event.data.json(); } catch (_) {}
++
++    // The live Socket.IO call UI handles foreground calls. Push is for hidden/closed apps.
++    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
++    const visibleClient = windows.some(c => c.visibilityState === 'visible' && c.focused);
++    if (d.type === 'incoming-call' && visibleClient) return;
++
++    const isCall = d.type === 'incoming-call';
++    await self.registration.showNotification(d.title || 'New message', {
++      body: d.body || '',
++      tag: isCall ? 'call-' + d.callId : (d.fromId != null ? 'chat-' + d.fromId : 'test'),
++      renotify: true,
++      requireInteraction: isCall,
++      vibrate: isCall ? [250, 150, 250, 150, 500] : undefined,
++      actions: isCall ? [{ action: 'accept', title: 'Accept' }, { action: 'reject', title: 'Reject' }] : [],
++      icon: '/icon-192.png', badge: '/icon-192.png',
++      data: { type: d.type || 'message', callId: d.callId, fromId: d.fromId, toId: d.toId }
++    });
++  })());
+ });
+ 
+-// Tap notification -> focus the app and open that chat
+ self.addEventListener('notificationclick', event => {
+   event.notification.close();
+-  const { fromId, toId } = event.notification.data || {};
++  const data = event.notification.data || {};
++  const action = event.action === 'accept' || event.action === 'reject' ? event.action : 'open';
+   event.waitUntil((async () => {
+-    const all = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+-    if (all.length) {
+-      await all[0].focus();
+-      if (fromId != null) all[0].postMessage({ type: 'open-chat', userId: fromId, toId });
++    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
++    const url = data.type === 'incoming-call'
++      ? `/?callId=${encodeURIComponent(data.callId || '')}&callAction=${action}`
++      : (data.fromId != null ? `/?chat=${encodeURIComponent(data.fromId)}&to=${encodeURIComponent(data.toId || '')}` : '/');
++    if (windows.length) {
++      const client = windows[0];
++      await client.focus();
++      client.postMessage(data.type === 'incoming-call'
++        ? { type: 'call-notification-action', action, callId: data.callId, fromId: data.fromId }
++        : { type: 'open-chat', userId: data.fromId, toId: data.toId });
+     } else {
+-      await clients.openWindow(fromId != null ? `/?chat=${fromId}&to=${toId}` : '/');
++      await self.clients.openWindow(url);
+     }
+   })());
+ });
+diff --git a/src/socket/calls.js b/src/socket/calls.js
+index d088e42..c8a5719 100644
+--- a/src/socket/calls.js
++++ b/src/socket/calls.js
+@@ -1,6 +1,7 @@
+ // One-to-one voice-call signaling. Audio never passes through this server.
+ const crypto = require('crypto');
+ const rt = require('../realtime');
++const push = require('../push');
+ 
+ const calls = new Map();             // callId -> call
+ const activeByUser = new Map();      // userId -> callId
+@@ -27,7 +28,6 @@ function register(socket) {
+       return socket.emit('call:error', { message: 'Invalid recipient.' });
+     }
+     if (activeByUser.has(userId)) return socket.emit('call:busy', { reason: 'You are already in a call.' });
+-    if (!rt.isOnline(calleeId)) return socket.emit('call:offline', { to: calleeId });
+     if (activeByUser.has(calleeId)) return socket.emit('call:busy', { to: calleeId });
+ 
+     const call = {
+@@ -37,10 +37,23 @@ function register(socket) {
+     calls.set(call.id, call);
+     activeByUser.set(userId, call.id);
+     activeByUser.set(calleeId, call.id);
++    // Notify hidden/closed clients through Web Push as well as live Socket.IO tabs.
+     rt.emitToUser(calleeId, 'call:incoming', { callId: call.id, from: userId });
++    push.sendPush(calleeId, { type: 'incoming-call', title: 'Incoming voice call', body: 'Someone is calling you.', callId: call.id, fromId: userId, toId: calleeId })
++      .catch(err => console.error('Incoming-call push failed:', err.message));
+     socket.emit('call:ringing', { callId: call.id, to: calleeId });
+   });
+ 
++  // A push notification can reopen the app after its original page was closed.
++  socket.on('call:resume', ({ callId } = {}) => {
++    const call = calls.get(callId);
++    if (!call || call.calleeId !== userId || call.calleeSocketId || Date.now() - call.createdAt > 35000) {
++      socket.emit('call:unavailable', { callId });
++      return;
++    }
++    socket.emit('call:incoming', { callId: call.id, from: call.callerId });
++  });
++
+   socket.on('call:accept', async ({ callId } = {}) => {
+     const call = calls.get(callId);
+     if (!call || call.calleeId !== userId || call.calleeSocketId) {

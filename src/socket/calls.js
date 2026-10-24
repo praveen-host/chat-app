@@ -1,6 +1,7 @@
 // One-to-one voice-call signaling. Audio never passes through this server.
 const crypto = require('crypto');
 const rt = require('../realtime');
+const push = require('../push');
 
 const calls = new Map();             // callId -> call
 const activeByUser = new Map();      // userId -> callId
@@ -27,7 +28,6 @@ function register(socket) {
       return socket.emit('call:error', { message: 'Invalid recipient.' });
     }
     if (activeByUser.has(userId)) return socket.emit('call:busy', { reason: 'You are already in a call.' });
-    if (!rt.isOnline(calleeId)) return socket.emit('call:offline', { to: calleeId });
     if (activeByUser.has(calleeId)) return socket.emit('call:busy', { to: calleeId });
 
     const call = {
@@ -37,8 +37,21 @@ function register(socket) {
     calls.set(call.id, call);
     activeByUser.set(userId, call.id);
     activeByUser.set(calleeId, call.id);
+    // Notify hidden/closed clients through Web Push as well as live Socket.IO tabs.
     rt.emitToUser(calleeId, 'call:incoming', { callId: call.id, from: userId });
+    push.sendPush(calleeId, { type: 'incoming-call', title: 'Incoming voice call', body: 'Someone is calling you.', callId: call.id, fromId: userId, toId: calleeId })
+      .catch(err => console.error('Incoming-call push failed:', err.message));
     socket.emit('call:ringing', { callId: call.id, to: calleeId });
+  });
+
+  // A push notification can reopen the app after its original page was closed.
+  socket.on('call:resume', ({ callId } = {}) => {
+    const call = calls.get(callId);
+    if (!call || call.calleeId !== userId || call.calleeSocketId || Date.now() - call.createdAt > 35000) {
+      socket.emit('call:unavailable', { callId });
+      return;
+    }
+    socket.emit('call:incoming', { callId: call.id, from: call.callerId });
   });
 
   socket.on('call:accept', async ({ callId } = {}) => {

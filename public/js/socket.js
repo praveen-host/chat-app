@@ -7,6 +7,20 @@ async function start() {
   socket = io({ auth: { token } });
   initCallEvents();
 
+  socket.on('connect', () => {
+    reportVisibility();
+    const params = new URLSearchParams(location.search);
+    const callId = params.get('callId');
+    const callAction = params.get('callAction');
+    if (callId) {
+      socket.emit('call:resume', { callId });
+      if (callAction === 'accept' || callAction === 'reject') {
+        window.__pendingCallNotificationAction = { action: callAction, callId };
+      }
+      history.replaceState(null, '', '/');
+    }
+  }); // report visibility and resume a call opened from a notification
+
   /* presence & profiles */
   socket.on('presence:list', ids => {
     online.clear();
@@ -39,7 +53,6 @@ async function start() {
   renderChat();
 
   initPush();
-  socket.on('connect', reportVisibility);                // tell the server whether this tab is in front
   socket.on('connect_error', err => { if (err.message === 'Unauthorized') expireSession(); });
   const qs = new URLSearchParams(location.search);       // opened from a notification
   const openId = Number(qs.get('chat')), forId = Number(qs.get('to'));

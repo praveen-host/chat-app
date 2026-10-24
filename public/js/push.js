@@ -5,7 +5,8 @@ if (pushSupported) {
   navigator.serviceWorker.register('/sw.js').catch(console.error);
   navigator.serviceWorker.addEventListener('message', e => {       // notification tapped while app is open
     const d = e.data || {};
-    if (d.type === 'open-chat' && (d.toId == null || d.toId === me.id) && users.some(u => u.id === d.userId)) openChat(d.userId);
+    if (d.type === 'open-chat' && (d.toId == null || Number(d.toId) === Number(me.id)) && users.some(u => Number(u.id) === Number(d.userId))) openChat(Number(d.userId));
+    if (d.type === 'call-notification-action' && typeof handleCallNotificationAction === 'function') handleCallNotificationAction(d.action, d.callId);
   });
 }
 

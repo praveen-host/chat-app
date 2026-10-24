@@ -103,3 +103,27 @@
 .call-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 #remoteCallAudio { width: 0; height: 0; }
 @media (max-width: 700px) { .call-sheet { height: auto; max-height: 90dvh; border-radius: 14px; } }
+
+/* Compact persistent in-app call bar; notifications are handled by the service worker. */
+#callOverlay.call-active {
+  display: flex !important;
+  inset: auto 18px 18px auto;
+  width: min(390px, calc(100vw - 36px));
+  background: transparent;
+  justify-content: flex-end;
+  align-items: flex-end;
+  pointer-events: none;
+  z-index: 1000;
+}
+#callOverlay.call-active .call-sheet {
+  pointer-events: auto;
+  width: 100%; max-width: none; max-height: 70vh;
+  border: 1px solid var(--line); box-shadow: 0 8px 32px #0003;
+  border-radius: 16px; padding: 14px; gap: 10px;
+}
+#callOverlay.call-active .call-avatar { width: 42px; height: 42px; font-size: 22px; }
+#callOverlay.call-active .call-actions button { min-height: 38px; }
+@media (max-width: 700px) {
+  #callOverlay.call-active { inset: auto 10px 10px 10px; width: auto; }
+  #callOverlay.call-active .call-sheet { height: auto; max-width: none; border-radius: 16px; }
+}

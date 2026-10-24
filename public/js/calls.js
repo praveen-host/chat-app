@@ -4,6 +4,11 @@ let callPeerConnection = null;
 let callLocalStream = null;
 let callTimeout = null;
 let pendingIceCandidates = [];
+let ringtoneContext = null;
+let ringtoneTimer = null;
+let speakerMuted = false;
+let microphoneMuted = false;
+let pendingNotificationAction = null;
 
 const callIceConfig = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -18,18 +23,56 @@ function setCallStatus(text) {
 }
 function showCallUi({ incoming = false } = {}) {
   $('callOverlay').style.display = 'flex';
+  $('callOverlay').classList.add('call-active');
   $('callAccept').style.display = incoming ? '' : 'none';
   $('callReject').style.display = incoming ? '' : 'none';
   $('callMute').style.display = incoming ? 'none' : '';
   $('callEnd').style.display = incoming ? 'none' : '';
   $('callTitle').textContent = activeCall ? callPeerName(activeCall.peerId) : 'Voice call';
 }
+function stopRingtone() {
+  if (ringtoneTimer) clearInterval(ringtoneTimer);
+  ringtoneTimer = null;
+  // Keep the audio context unlocked for the next incoming call.
+}
+function playRingtoneTone() {
+  if (!ringtoneContext || ringtoneContext.state !== 'running') return;
+  try {
+    const osc = ringtoneContext.createOscillator();
+    const gain = ringtoneContext.createGain();
+    osc.type = 'sine'; osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.0001, ringtoneContext.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.12, ringtoneContext.currentTime + 0.03);
+    gain.gain.setValueAtTime(0.12, ringtoneContext.currentTime + 0.22);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ringtoneContext.currentTime + 0.28);
+    osc.connect(gain); gain.connect(ringtoneContext.destination);
+    osc.start(); osc.stop(ringtoneContext.currentTime + 0.3);
+  } catch (_) {}
+}
+async function unlockCallAudio() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!ringtoneContext || ringtoneContext.state === 'closed') ringtoneContext = new AudioCtx();
+    if (ringtoneContext.state === 'suspended') await ringtoneContext.resume();
+  } catch (_) {}
+}
+async function startRingtone() {
+  stopRingtone();
+  await unlockCallAudio();
+  playRingtoneTone();
+  ringtoneTimer = setInterval(playRingtoneTone, 900);
+}
+// Unlock Web Audio during an ordinary user gesture so later incoming calls can ring.
+document.addEventListener('pointerdown', () => { unlockCallAudio(); }, { once: true });
+document.addEventListener('keydown', () => { unlockCallAudio(); }, { once: true });
 function clearCallTimer() {
   if (callTimeout) clearTimeout(callTimeout);
   callTimeout = null;
 }
 function cleanupVoiceCall() {
   clearCallTimer();
+  stopRingtone();
   if (callPeerConnection) {
     callPeerConnection.ontrack = null;
     callPeerConnection.onicecandidate = null;
@@ -44,7 +87,10 @@ function cleanupVoiceCall() {
   if (audio) { audio.pause(); audio.srcObject = null; }
   activeCall = null;
   $('callOverlay').style.display = 'none';
-  $('callMute').textContent = 'Mute';
+  $('callOverlay').classList.remove('call-active');
+  $('callMute').textContent = 'Mute mic';
+  $('callSpeaker').textContent = 'Mute speaker';
+  speakerMuted = false; microphoneMuted = false;
 }
 async function ensureCallMedia() {
   if (callLocalStream) return callLocalStream;
@@ -80,6 +126,7 @@ function ensurePeerConnection() {
 }
 
 async function startVoiceCall() {
+  await unlockCallAudio();
   if (!peer || !socket?.connected) return alert('Open a chat and connect to the server first.');
   if (activeCall) return;
   if (!online.has(peer)) return alert('This user is offline. Try again when they are active.');
@@ -96,6 +143,8 @@ async function startVoiceCall() {
 }
 
 async function acceptVoiceCall() {
+  stopRingtone();
+  await unlockCallAudio();
   if (!activeCall || activeCall.role !== 'callee' || activeCall.status !== 'incoming') return;
   try {
     await ensureCallMedia();
@@ -122,8 +171,33 @@ function toggleCallMute() {
   const tracks = callLocalStream.getAudioTracks();
   const shouldEnable = tracks.some(track => !track.enabled);
   tracks.forEach(track => { track.enabled = shouldEnable; });
-  $('callMute').textContent = shouldEnable ? 'Mute' : 'Unmute';
-  setCallStatus(shouldEnable ? 'Connected' : 'Microphone muted');
+  microphoneMuted = !shouldEnable;
+  $('callMute').textContent = shouldEnable ? 'Mute mic' : 'Unmute mic';
+  setCallStatus(shouldEnable ? (speakerMuted ? 'Connected — speaker muted' : 'Connected') : 'Microphone muted');
+}
+
+function toggleSpeakerMute() {
+  const audio = $('remoteCallAudio');
+  if (!audio) return;
+  speakerMuted = !speakerMuted;
+  audio.muted = speakerMuted;
+  $('callSpeaker').textContent = speakerMuted ? 'Unmute speaker' : 'Mute speaker';
+  setCallStatus(speakerMuted ? 'Speaker muted' : (microphoneMuted ? 'Microphone muted' : 'Connected'));
+}
+function handleCallNotificationAction(action, callId) {
+  if (!['accept', 'reject'].includes(action)) return;
+  if (!activeCall || activeCall.callId !== callId) {
+    pendingNotificationAction = { action, callId };
+    return;
+  }
+  if (action === 'accept') acceptVoiceCall(); else rejectVoiceCall();
+}
+function processPendingCallAction() {
+  const action = pendingNotificationAction || window.__pendingCallNotificationAction;
+  if (!action || !activeCall || activeCall.callId !== action.callId) return;
+  pendingNotificationAction = null;
+  window.__pendingCallNotificationAction = null;
+  setTimeout(() => handleCallNotificationAction(action.action, action.callId), 100);
 }
 
 function initCallEvents() {
@@ -135,6 +209,8 @@ function initCallEvents() {
     activeCall = { callId, peerId: Number(from), role: 'callee', status: 'incoming' };
     showCallUi({ incoming: true });
     setCallStatus('Incoming voice call…');
+    startRingtone();
+    processPendingCallAction();
   });
   socket.on('call:ringing', ({ callId, to }) => {
     if (!activeCall || activeCall.role !== 'caller') return;
@@ -204,6 +280,7 @@ function initCallEvents() {
   });
 
   socket.on('call:rejected', () => { setCallStatus('Call declined'); cleanupVoiceCall(); });
+  socket.on('call:unavailable', () => { pendingNotificationAction = null; window.__pendingCallNotificationAction = null; cleanupVoiceCall(); alert('This call has expired or is no longer available.'); });
   socket.on('call:busy', () => { alert('You or the other user is already in a call.'); cleanupVoiceCall(); });
   socket.on('call:offline', () => { alert('This user is offline.'); cleanupVoiceCall(); });
   socket.on('call:error', ({ message }) => { alert(message || 'Call could not be started.'); cleanupVoiceCall(); });

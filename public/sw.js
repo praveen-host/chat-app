@@ -1,31 +1,47 @@
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 
-// Push from the server (sent when the recipient is offline, logged out, or has the app hidden)
 self.addEventListener('push', event => {
-  let d = {};
-  try { d = event.data.json(); } catch (e) {}
-  event.waitUntil(self.registration.showNotification(d.title || 'New message', {
-    body: d.body || '',
-    tag: d.fromId != null ? 'chat-' + d.fromId : 'test',   // one notification per sender
-    renotify: true,
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
-    data: { fromId: d.fromId, toId: d.toId }
-  }));
+  event.waitUntil((async () => {
+    let d = {};
+    try { d = event.data.json(); } catch (_) {}
+
+    // The live Socket.IO call UI handles foreground calls. Push is for hidden/closed apps.
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const visibleClient = windows.some(c => c.visibilityState === 'visible' && c.focused);
+    if (d.type === 'incoming-call' && visibleClient) return;
+
+    const isCall = d.type === 'incoming-call';
+    await self.registration.showNotification(d.title || 'New message', {
+      body: d.body || '',
+      tag: isCall ? 'call-' + d.callId : (d.fromId != null ? 'chat-' + d.fromId : 'test'),
+      renotify: true,
+      requireInteraction: isCall,
+      vibrate: isCall ? [250, 150, 250, 150, 500] : undefined,
+      actions: isCall ? [{ action: 'accept', title: 'Accept' }, { action: 'reject', title: 'Reject' }] : [],
+      icon: '/icon-192.png', badge: '/icon-192.png',
+      data: { type: d.type || 'message', callId: d.callId, fromId: d.fromId, toId: d.toId }
+    });
+  })());
 });
 
-// Tap notification -> focus the app and open that chat
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const { fromId, toId } = event.notification.data || {};
+  const data = event.notification.data || {};
+  const action = event.action === 'accept' || event.action === 'reject' ? event.action : 'open';
   event.waitUntil((async () => {
-    const all = await clients.matchAll({ type: 'window', includeUncontrolled: true });
-    if (all.length) {
-      await all[0].focus();
-      if (fromId != null) all[0].postMessage({ type: 'open-chat', userId: fromId, toId });
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const url = data.type === 'incoming-call'
+      ? `/?callId=${encodeURIComponent(data.callId || '')}&callAction=${action}`
+      : (data.fromId != null ? `/?chat=${encodeURIComponent(data.fromId)}&to=${encodeURIComponent(data.toId || '')}` : '/');
+    if (windows.length) {
+      const client = windows[0];
+      await client.focus();
+      client.postMessage(data.type === 'incoming-call'
+        ? { type: 'call-notification-action', action, callId: data.callId, fromId: data.fromId }
+        : { type: 'open-chat', userId: data.fromId, toId: data.toId });
     } else {
-      await clients.openWindow(fromId != null ? `/?chat=${fromId}&to=${toId}` : '/');
+      await self.clients.openWindow(url);
     }
   })());
 });

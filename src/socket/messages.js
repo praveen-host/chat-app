@@ -17,7 +17,8 @@ function mapMessage(row, meId) {
     reply: deleted || !row.reply_json ? null : JSON.parse(row.reply_json),
     ts: row.created_at,
     status: row.sender_id !== meId ? undefined : (row.read_at ? 'read' : row.delivered_at ? 'delivered' : 'sent'),
-    deleted
+    deleted,
+    editedAt: row.edited_at || null
   };
 }
 
@@ -84,6 +85,21 @@ function register(socket) {
       const result = rows.reverse().map(row => ({ ...mapMessage(row, me.id), mine: Number(row.sender_id) === Number(me.id) }));
       cb({ ok: true, messages: result });
     } catch (e) { console.error('chat:history failed', e); cb({ error: 'Server error' }); }
+  });
+
+  socket.on('message:edit', async ({ to, cid, body } = {}, cb = () => {}) => {
+    try {
+      body = (body || '').toString().trim();
+      if (!Number.isInteger(to) || to === me.id || typeof cid !== 'string' || !cid || cid.length > 64 || !body || body.length > config.MAX_LEN)
+        return cb({ error: 'Invalid message' });
+      const [result] = await pool.query(
+        'UPDATE messages SET body = ?, edited_at = CURRENT_TIMESTAMP WHERE sender_id = ? AND recipient_id = ? AND client_id = ? AND deleted_at IS NULL',
+        [body, me.id, to, cid]);
+      if (!result.affectedRows) return cb({ error: 'Message cannot be edited' });
+      const payload = { by: me.id, cid, body, editedAt: new Date().toISOString() };
+      rt.emitToUser(to, 'message:edited', payload);
+      cb({ ok: true, ...payload });
+    } catch (e) { console.error('message:edit failed', e); cb({ error: 'Server error' }); }
   });
 
   socket.on('message:delete', async ({ to, cid } = {}, cb = () => {}) => {

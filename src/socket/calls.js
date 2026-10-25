@@ -137,6 +137,13 @@ function register(socket) {
   socket.on('call:answer', ({ callId, answer } = {}) => {
     if (answer && typeof answer === 'object') relay(callId, 'call:answer', { answer }, 'callee');
   });
+  socket.on('call:media-state', ({ callId, microphoneMuted, cameraOff } = {}) => {
+    relay(callId, 'call:media-state', {
+      microphoneMuted: microphoneMuted === true,
+      cameraOff: cameraOff === true
+    });
+  });
+
   socket.on('call:ice', ({ callId, candidate } = {}) => {
     if (candidate && typeof candidate === 'object') relay(callId, 'call:ice', { candidate });
   });

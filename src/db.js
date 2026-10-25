@@ -60,6 +60,8 @@ async function createSchema() {
     FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
   )`);
 
+  await addColumn('ALTER TABLE messages ADD COLUMN edited_at TIMESTAMP NULL DEFAULT NULL');
+
   // Browser push subscriptions (one user can have several devices)
   await pool.query(`CREATE TABLE IF NOT EXISTS push_subscriptions (
     id INT AUTO_INCREMENT PRIMARY KEY,

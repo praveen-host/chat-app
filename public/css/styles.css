@@ -449,3 +449,9 @@ body { color: #182338; letter-spacing: .01em; }
 /* ---- Reconnecting: dim the picture while the connection recovers ---- */
 #callOverlay.call-reconnecting #remoteCallVideo { filter: blur(6px) brightness(.55); transition: filter .3s; }
 #callOverlay.call-reconnecting #callStatus { font-weight: 600; }
+
+/* Message editing and call diagnostics */
+.call-quality, .call-peer-media-status { font-size: 12px; color: #777; text-align: center; margin: 4px 0; }
+.call-quality[data-quality="good"] { color: #16803c; }
+.call-quality[data-quality="fair"] { color: #a66a00; }
+.call-quality[data-quality="weak"] { color: #c0392b; }

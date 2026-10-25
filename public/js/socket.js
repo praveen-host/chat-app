@@ -92,6 +92,12 @@ async function start() {
     (history[by] || []).forEach(m => { if (m.mine && set.has(m.cid)) setStatus(m, status); });
     if (peer === by) renderChat();
   });
+  socket.on('message:edited', ({ by, cid, body, editedAt }) => {
+    const m = (history[by] || []).find(x => x.cid === cid && !x.mine);
+    if (!m) return;
+    m.body = body; m.editedAt = editedAt || new Date().toISOString();
+    if (peer === Number(by)) renderChat();
+  });
   // The other person deleted one of their messages for everyone
   socket.on('message:deleted', ({ by, cid }) => {
     const m = (history[by] || []).find(x => x.cid === cid && !x.mine);

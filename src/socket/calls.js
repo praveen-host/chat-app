@@ -6,12 +6,8 @@ const { pool } = require('../db');
 
 const calls = new Map();             // callId -> call
 const activeByUser = new Map();      // userId -> callId
-// An answered call survives a dropped connection this long while the person reconnects.
-const RECONNECT_GRACE_MS = Number(process.env.CALL_RECONNECT_GRACE_MS) || 45000;
 
 function clearCall(call) {
-  if (call.graceTimer) clearTimeout(call.graceTimer);
-  call.graceTimer = null;
   calls.delete(call.id);
   if (activeByUser.get(call.callerId) === call.id) activeByUser.delete(call.callerId);
   if (activeByUser.get(call.calleeId) === call.id) activeByUser.delete(call.calleeId);
@@ -40,23 +36,6 @@ async function emitToSocket(userId, socketId, event, payload) {
   const sockets = await rt.userSockets(userId);
   const target = sockets.find(s => s.id === socketId);
   if (target) target.emit(event, payload);
-}
-
-// An answered call lost one side's connection: keep it alive for a while instead of ending it.
-function startGrace(call, role) {
-  call.offline = call.offline || { caller: false, callee: false };
-  call.offline[role] = true;
-  const otherCaller = role === 'callee';
-  emitToSocket(otherCaller ? call.callerId : call.calleeId, otherCaller ? call.callerSocketId : call.calleeSocketId, 'call:peer-lost', { callId: call.id });
-  if (call.graceTimer) return;
-  call.graceTimer = setTimeout(async () => {
-    if (!calls.has(call.id)) return;
-    const offline = call.offline || {};
-    clearCall(call);
-    const payload = { callId: call.id, reason: 'connection-lost' };
-    if (!offline.caller) await emitToSocket(call.callerId, call.callerSocketId, 'call:ended', payload);
-    if (!offline.callee) await emitToSocket(call.calleeId, call.calleeSocketId, 'call:ended', payload);
-  }, RECONNECT_GRACE_MS);
 }
 
 function register(socket) {
@@ -141,29 +120,6 @@ function register(socket) {
     if (candidate && typeof candidate === 'object') relay(callId, 'call:ice', { candidate });
   });
 
-  // After a network drop the client reconnects with a new socket id: re-attach it to its live call.
-  socket.on('call:rejoin', async ({ callId } = {}) => {
-    const call = calls.get(callId);
-    const isCaller = !!call && call.callerId === userId;
-    const isCallee = !!call && call.calleeId === userId;
-    if (!call || !call.calleeSocketId || (!isCaller && !isCallee)) return socket.emit('call:rejoin-failed', { callId });
-    const role = isCaller ? 'caller' : 'callee';
-    if (isCaller) call.callerSocketId = socket.id; else call.calleeSocketId = socket.id;
-    if (call.offline) call.offline[role] = false;
-    if (!call.offline || (!call.offline.caller && !call.offline.callee)) {
-      if (call.graceTimer) clearTimeout(call.graceTimer);
-      call.graceTimer = null;
-    }
-    const peerOnline = !(call.offline && call.offline[isCaller ? 'callee' : 'caller']);
-    socket.emit('call:rejoined', { callId: call.id, role, peerOnline });
-    if (peerOnline) {
-      await emitToSocket(isCaller ? call.calleeId : call.callerId, isCaller ? call.calleeSocketId : call.callerSocketId, 'call:peer-back', { callId: call.id });
-    }
-  });
-
-  // The callee noticed the media path died; only the caller (offerer) can restart ICE.
-  socket.on('call:restart-request', ({ callId } = {}) => { relay(callId, 'call:restart-request', {}, 'callee'); });
-
   socket.on('call:end', async ({ callId, reason } = {}) => {
     const call = calls.get(callId);
     if (!call || (socket.id !== call.callerSocketId && socket.id !== call.calleeSocketId)) return;
@@ -182,7 +138,6 @@ function register(socket) {
     const callId = activeByUser.get(userId);
     const call = calls.get(callId);
     if (!call || (socket.id !== call.callerSocketId && socket.id !== call.calleeSocketId)) return;
-    if (call.calleeSocketId) { startGrace(call, socket.id === call.callerSocketId ? 'caller' : 'callee'); return; }
     clearCall(call);
     if (socket.id === call.callerSocketId && !call.calleeSocketId) closeIncomingNotification(call, 'missed-call');
     const payload = { callId: call.id, reason: 'disconnect' };

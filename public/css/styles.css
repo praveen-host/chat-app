@@ -445,7 +445,3 @@ body { color: #182338; letter-spacing: .01em; }
   #callOverlay.call-vid.call-incoming #callMsg { order: 2; width: 54px; }
   #callOverlay.call-vid.call-incoming #callAccept { order: 3; }
 }
-
-/* ---- Reconnecting: dim the picture while the connection recovers ---- */
-#callOverlay.call-reconnecting #remoteCallVideo { filter: blur(6px) brightness(.55); transition: filter .3s; }
-#callOverlay.call-reconnecting #callStatus { font-weight: 600; }

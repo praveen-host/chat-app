@@ -344,3 +344,15 @@ body { color: #182338; letter-spacing: .01em; }
 #callOverlay.call-video .call-avatar { display: none; }
 #callOverlay.call-active.call-video { width: min(460px, calc(100vw - 36px)); }
 @media (max-width: 700px) { #callOverlay.call-active.call-video { width: auto; } }
+
+/* Phones: icon-only call buttons and a call sheet that always fits the screen. */
+@media (max-width: 700px) {
+  #voiceCallBtn .lbl, #videoCallBtn .lbl { display: none; }
+  #voiceCallBtn, #videoCallBtn { min-width: 42px; min-height: 42px; padding: 0 10px; font-size: 18px; }
+  #peerInfo { min-width: 0; flex: 1; }
+  #peerName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+  #callOverlay.call-active.call-video { inset: 0; padding: 8px; align-items: flex-end; }
+  #callOverlay.call-active.call-video .call-sheet { max-height: calc(100dvh - 16px); overflow-y: auto; padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+  #callVideo { aspect-ratio: 3 / 4; max-height: 52dvh; }
+  .call-actions button { flex: 1 1 auto; }
+}

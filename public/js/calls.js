@@ -132,14 +132,36 @@ function cleanupVoiceCall() {
   $('callSpeaker').textContent = 'Mute speaker';
   speakerMuted = false; microphoneMuted = false;
 }
+function friendlyMediaError(error, wantVideo) {
+  const what = wantVideo ? 'camera and microphone' : 'microphone';
+  const map = {
+    NotAllowedError: `Permission to use the ${what} was denied. Allow it in your browser's site settings, then try again.`,
+    NotFoundError: `No ${what} was found on this device.`,
+    NotReadableError: `The ${what} is being used by another app. Close it and try again.`,
+    SecurityError: 'Calls need HTTPS. Open this app using its https:// address.'
+  };
+  return new Error(map[error?.name] || `Could not start the ${what} (${error?.name || 'unknown error'}).`);
+}
 async function ensureCallMedia() {
   if (callLocalStream) return callLocalStream;
-  if (!navigator.mediaDevices?.getUserMedia) throw new Error('Microphone/camera access requires a supported browser and HTTPS.');
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    throw new Error('Calls need HTTPS. Open this app using its https:// address (not http:// or a plain IP) and try again.');
+  }
   const wantVideo = !!activeCall?.video;
-  callLocalStream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    video: wantVideo ? { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } : false
-  });
+  const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+  try {
+    callLocalStream = await navigator.mediaDevices.getUserMedia({
+      audio,
+      // Modest size keeps phones and mobile networks happy.
+      video: wantVideo ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24, max: 30 } } : false
+    });
+  } catch (error) {
+    // Some phones reject specific constraints; retry with the simplest request.
+    if (wantVideo && ['OverconstrainedError', 'NotFoundError'].includes(error.name)) {
+      try { callLocalStream = await navigator.mediaDevices.getUserMedia({ audio, video: true }); }
+      catch (retryError) { throw friendlyMediaError(retryError, wantVideo); }
+    } else throw friendlyMediaError(error, wantVideo);
+  }
   if (wantVideo) {
     const local = $('localCallVideo');
     if (local) { local.srcObject = callLocalStream; local.play().catch(() => {}); }
@@ -163,7 +185,7 @@ function ensurePeerConnection() {
     // the remote <video> is muted and only shows the picture.
     if (activeCall?.video) {
       const remote = $('remoteCallVideo');
-      if (remote) { remote.srcObject = event.streams[0]; remote.play().catch(() => {}); }
+      if (remote) { remote.srcObject = event.streams[0]; remote.play().catch(() => setCallStatus('Tap the video to start playback')); }
     }
   };
   callPeerConnection.onconnectionstatechange = () => {
@@ -277,6 +299,7 @@ function processPendingCallAction() {
 }
 
 function initCallEvents() {
+  loadCallIceConfig(); // preload TURN config so tapping Accept goes straight to the camera prompt
   socket.on('call:incoming', ({ callId, from, video }) => {
     if (activeCall) {
       socket.emit('call:reject', { callId });
@@ -306,7 +329,7 @@ function initCallEvents() {
       socket.emit('call:offer', { callId, offer: pc.localDescription });
       setCallStatus('Connecting…');
     } catch (error) {
-      setCallStatus(error.message || 'Could not start microphone.');
+      alert(error.message || 'Could not start the call.');
       endVoiceCall();
     }
   });

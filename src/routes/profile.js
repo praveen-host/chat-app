@@ -8,18 +8,25 @@ const config = require('../config');
 const realtime = require('../realtime');
 
 // What other users may see. Email and phone are private and never included here.
-const PROFILE_COLS = 'id, username, display_name, full_name, about, has_avatar, avatar_version';
+const PROFILE_COLS = `id, username, display_name, full_name, about, has_avatar, avatar_version,
+  UNIX_TIMESTAMP(last_active_at) * 1000 AS last_active_at_ms`;
+// Return UTC ISO timestamps from MySQL epoch values. Browsers then display them in
+// each viewer's own local time zone, regardless of the server/DB time zone.
+const isoFromEpochMs = value => value == null ? null : new Date(Number(value)).toISOString();
 const publicProfile = r => ({ id: r.id, username: r.username, displayName: r.display_name || r.username,
-  fullName: r.full_name || '', about: r.about || '', avatarVersion: r.has_avatar ? r.avatar_version : 0 });
+  fullName: r.full_name || '', about: r.about || '', avatarVersion: r.has_avatar ? r.avatar_version : 0,
+  lastActiveAt: isoFromEpochMs(r.last_active_at_ms) });
 
 async function loadOwnProfile(id) {
-  const [rows] = await pool.query(`SELECT ${PROFILE_COLS}, email, phone, last_login_at FROM users WHERE id = ?`, [id]);
+  const [rows] = await pool.query(`SELECT ${PROFILE_COLS}, email, phone,
+    UNIX_TIMESTAMP(last_login_at) * 1000 AS last_login_at_ms FROM users WHERE id = ?`, [id]);
   if (!rows.length) return null;
-  return { ...publicProfile(rows[0]), email: rows[0].email || '', phone: rows[0].phone || '', lastLoginAt: rows[0].last_login_at || null };
+  return { ...publicProfile(rows[0]), email: rows[0].email || '', phone: rows[0].phone || '',
+    lastLoginAt: isoFromEpochMs(rows[0].last_login_at_ms) };
 }
 // Tell everyone connected (live) that someone changed their profile
 const broadcastProfile = p => realtime.emitToAll('profile', { id: p.id, username: p.username, displayName: p.displayName,
-  fullName: p.fullName, about: p.about, avatarVersion: p.avatarVersion });
+  fullName: p.fullName, about: p.about, avatarVersion: p.avatarVersion, lastActiveAt: p.lastActiveAt });
 
 router.get('/users', auth, wrap(async (req, res) => {
   const [rows] = await pool.query(`SELECT ${PROFILE_COLS} FROM users WHERE id <> ? ORDER BY COALESCE(display_name, username)`, [req.user.id]);

@@ -33,14 +33,17 @@ async function start() {
     renderHeader();
   });
 
-  socket.on('presence', ({ id, online: isOnline }) => {
+  socket.on('presence', ({ id, online: isOnline, lastActiveAt }) => {
     id = Number(id);
+    const user = users.find(u => Number(u.id) === id);
 
     if (isOnline) {
       online.add(id);
     } else {
       online.delete(id);
       clearTyping(id);
+      // The server sends this only when the user's final tab/device disconnects.
+      if (user && lastActiveAt) user.lastActiveAt = lastActiveAt;
     }
 
     renderUsers();

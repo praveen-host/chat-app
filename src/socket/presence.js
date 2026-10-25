@@ -9,8 +9,28 @@ function register(socket) {
 
   socket.emit('presence:list', rt.onlineIds());
   if (!wasOnline) socket.broadcast.emit('presence', { id: me.id, online: true });
-  socket.on('disconnect', () => {
-    if (!rt.isOnline(me.id)) rt.emitToAll('presence', { id: me.id, online: false });
+  socket.on('disconnect', async () => {
+    // A user can have multiple tabs/devices. Only mark them inactive after the
+    // final Socket.IO connection has left their personal room.
+    if (!rt.isOnline(me.id)) {
+      try {
+        await pool.query(
+          'UPDATE users SET last_active_at = CURRENT_TIMESTAMP WHERE id = ?',
+          [me.id]
+        );
+        const [rows] = await pool.query(
+          'SELECT UNIX_TIMESTAMP(last_active_at) * 1000 AS lastActiveAtMs FROM users WHERE id = ?',
+          [me.id]
+        );
+        const lastActiveAt = rows[0]?.lastActiveAtMs == null
+          ? new Date().toISOString()
+          : new Date(Number(rows[0].lastActiveAtMs)).toISOString();
+        rt.emitToAll('presence', { id: me.id, online: false, lastActiveAt });
+      } catch (e) {
+        console.error('Could not update last-active timestamp:', e);
+        rt.emitToAll('presence', { id: me.id, online: false, lastActiveAt: new Date().toISOString() });
+      }
+    }
   });
 }
 

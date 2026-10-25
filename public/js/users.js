@@ -1,3 +1,18 @@
+function formatLastActive(value) {
+  if (!value) return 'unknown';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'unknown';
+  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+  if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+  if (seconds < 7 * 86400) return Math.floor(seconds / 86400) + 'd ago';
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined });
+}
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
 /* The user list, the chat header, and opening/closing a conversation. */
 async function loadUsers() {
   const r = await fetch('/api/users', { headers: authHdr() });
@@ -25,7 +40,7 @@ function renderUsers() {
     const right = document.createElement('div');
     right.innerHTML = unread[u.id] ? `<span class="badge">${unread[u.id]}</span>`
       : typing ? `<span class="sub typing">typing…</span>`
-        : `<span class="sub">${on ? 'Active' : 'Inactive'}</span>`;
+        : `<span class="sub presence-label ${on ? 'is-online' : 'is-offline'}">${on ? 'Active now' : escapeHtml(formatLastActive(u.lastActiveAt))}</span>`;
     d.appendChild(right);
     d.onclick = () => openChat(u.id);
     $('list').appendChild(d);
@@ -62,7 +77,9 @@ function renderHeader() {
 
   $('peerStatus').innerHTML = typingNow.has(Number(u.id))
     ? '<span class="typing">typing…</span>'
-    : `<span class="dot ${on ? 'on' : ''}"></span>${on ? 'Active' : 'Inactive'}`;
+    : on
+      ? '<span class="dot on"></span><span class="is-online">Active now</span>'
+      : `<span class="dot"></span><span class="is-offline">${escapeHtml(formatLastActive(u.lastActiveAt))}</span>`;
 }
 
 

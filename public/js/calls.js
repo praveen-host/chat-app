@@ -10,9 +10,31 @@ let speakerMuted = false;
 let microphoneMuted = false;
 let pendingNotificationAction = null;
 
-const callIceConfig = {
-  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+// The server can supply TURN credentials through /api/call-config. STUN alone
+// cannot establish media paths on every NAT/firewall; TURN is the fallback.
+let callIceConfig = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ],
+  iceCandidatePoolSize: 10
 };
+let callIceConfigLoaded = false;
+let callConnectionTimer = null;
+async function loadCallIceConfig() {
+  if (callIceConfigLoaded) return;
+  callIceConfigLoaded = true;
+  try {
+    const response = await fetch('/api/call-config', { cache: 'no-store' });
+    if (!response.ok) return;
+    const config = await response.json();
+    if (Array.isArray(config.iceServers) && config.iceServers.length) {
+      callIceConfig = { ...callIceConfig, iceServers: [...callIceConfig.iceServers, ...config.iceServers] };
+    }
+  } catch (error) {
+    console.warn('Could not load optional TURN configuration:', error);
+  }
+}
 
 function callPeerName(id) {
   return users.find(u => u.id === Number(id))?.displayName || 'Contact';
@@ -72,6 +94,8 @@ function clearCallTimer() {
 }
 function cleanupVoiceCall() {
   clearCallTimer();
+  if (callConnectionTimer) clearTimeout(callConnectionTimer);
+  callConnectionTimer = null;
   stopRingtone();
   if (callPeerConnection) {
     callPeerConnection.ontrack = null;
@@ -117,16 +141,26 @@ function ensurePeerConnection() {
   callPeerConnection.onconnectionstatechange = () => {
     if (!callPeerConnection || !activeCall) return;
     const state = callPeerConnection.connectionState;
-    if (state === 'connected') setCallStatus('Connected');
-    else if (state === 'connecting') setCallStatus('Connecting…');
-    else if (state === 'failed') setCallStatus('Connection failed. Check network/TURN settings.');
+    if (state === 'connected') {
+      if (callConnectionTimer) clearTimeout(callConnectionTimer);
+      callConnectionTimer = null;
+      setCallStatus('Connected');
+    } else if (state === 'connecting') setCallStatus('Connecting…');
+    else if (state === 'failed') setCallStatus('Connection failed. Configure TURN or try another network.');
     else if (state === 'disconnected') setCallStatus('Connection interrupted…');
+  };
+  callPeerConnection.oniceconnectionstatechange = () => {
+    if (!callPeerConnection || !activeCall) return;
+    const state = callPeerConnection.iceConnectionState;
+    if (state === 'checking') setCallStatus('Finding audio connection…');
+    if (state === 'failed') setCallStatus('Network path failed. A TURN server may be required.');
   };
   return callPeerConnection;
 }
 
 async function startVoiceCall() {
   await unlockCallAudio();
+  await loadCallIceConfig();
   if (!peer || !socket?.connected) return alert('Open a chat and connect to the server first.');
   if (activeCall) return;
   if (!online.has(peer)) return alert('This user is offline. Try again when they are active.');
@@ -145,6 +179,7 @@ async function startVoiceCall() {
 async function acceptVoiceCall() {
   stopRingtone();
   await unlockCallAudio();
+  await loadCallIceConfig();
   if (!activeCall || activeCall.role !== 'callee' || activeCall.status !== 'incoming') return;
   try {
     await ensureCallMedia();

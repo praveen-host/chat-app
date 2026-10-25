@@ -15,6 +15,7 @@ async function createSchema() {
     password_hash VARCHAR(100) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`);
   await addColumn('ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP NULL DEFAULT NULL');
+  await addColumn('ALTER TABLE users ADD COLUMN last_active_at TIMESTAMP NULL DEFAULT NULL');
   // Profile fields
   await addColumn(`ALTER TABLE users
     ADD COLUMN display_name VARCHAR(50) NULL, ADD COLUMN full_name VARCHAR(100) NULL,

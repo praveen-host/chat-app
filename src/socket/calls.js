@@ -1,4 +1,4 @@
-// One-to-one voice-call signaling. Audio never passes through this server.
+// One-to-one voice/video call signaling. Audio never passes through this server.
 const crypto = require('crypto');
 const rt = require('../realtime');
 const push = require('../push');
@@ -22,7 +22,7 @@ async function emitToSocket(userId, socketId, event, payload) {
 function register(socket) {
   const userId = Number(socket.user.id);
 
-  socket.on('call:initiate', async ({ to } = {}) => {
+  socket.on('call:initiate', async ({ to, video } = {}) => {
     const calleeId = Number(to);
     if (!Number.isSafeInteger(calleeId) || calleeId <= 0 || calleeId === userId) {
       return socket.emit('call:error', { message: 'Invalid recipient.' });
@@ -32,14 +32,15 @@ function register(socket) {
 
     const call = {
       id: crypto.randomUUID(), callerId: userId, callerSocketId: socket.id,
-      calleeId, calleeSocketId: null, createdAt: Date.now()
+      calleeId, calleeSocketId: null, createdAt: Date.now(),
+      video: video === true // omitted/false => plain voice call (old clients unaffected)
     };
     calls.set(call.id, call);
     activeByUser.set(userId, call.id);
     activeByUser.set(calleeId, call.id);
     // Notify hidden/closed clients through Web Push as well as live Socket.IO tabs.
-    rt.emitToUser(calleeId, 'call:incoming', { callId: call.id, from: userId });
-    push.sendPush(calleeId, { type: 'incoming-call', title: 'Incoming voice call', body: 'Someone is calling you.', callId: call.id, fromId: userId, toId: calleeId })
+    rt.emitToUser(calleeId, 'call:incoming', { callId: call.id, from: userId, video: call.video });
+    push.sendPush(calleeId, { type: 'incoming-call', title: call.video ? 'Incoming video call' : 'Incoming voice call', body: 'Someone is calling you.', callId: call.id, fromId: userId, toId: calleeId })
       .catch(err => console.error('Incoming-call push failed:', err.message));
     socket.emit('call:ringing', { callId: call.id, to: calleeId });
   });
@@ -51,7 +52,7 @@ function register(socket) {
       socket.emit('call:unavailable', { callId });
       return;
     }
-    socket.emit('call:incoming', { callId: call.id, from: call.callerId });
+    socket.emit('call:incoming', { callId: call.id, from: call.callerId, video: call.video });
   });
 
   socket.on('call:accept', async ({ callId } = {}) => {

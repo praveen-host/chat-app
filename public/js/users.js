@@ -52,6 +52,7 @@ function renderUsers() {
 function renderHeader() {
   const u = peerUser();
   const callButton = $('voiceCallBtn');
+  const videoButton = $('videoCallBtn');
 
   if (!u) {
     $('peerName').textContent = 'Chat';
@@ -62,6 +63,10 @@ function renderHeader() {
       callButton.style.display = 'none';
       callButton.disabled = true;
     }
+    if (videoButton) {
+      videoButton.style.display = 'none';
+      videoButton.disabled = true;
+    }
     return;
   }
 
@@ -70,6 +75,10 @@ function renderHeader() {
   if (callButton) {
     callButton.style.display = '';
     callButton.disabled = !on;
+  }
+  if (videoButton) {
+    videoButton.style.display = '';
+    videoButton.disabled = !on;
   }
 
   $('peerAv').replaceChildren(avEl(u, 38, false));

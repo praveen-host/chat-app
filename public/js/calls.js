@@ -1,4 +1,4 @@
-/* One-to-one voice calling using WebRTC; Socket.IO carries signaling only. */
+/* One-to-one voice and video calling using WebRTC; Socket.IO carries signaling only. */
 let activeCall = null;
 let callPeerConnection = null;
 let callLocalStream = null;
@@ -8,6 +8,7 @@ let ringtoneContext = null;
 let ringtoneTimer = null;
 let speakerMuted = false;
 let microphoneMuted = false;
+let cameraOff = false;
 let pendingNotificationAction = null;
 
 // The server can supply TURN credentials through /api/call-config. STUN alone
@@ -51,6 +52,12 @@ function showCallUi({ incoming = false } = {}) {
   $('callMute').style.display = incoming ? 'none' : '';
   $('callEnd').style.display = incoming ? 'none' : '';
   $('callTitle').textContent = activeCall ? callPeerName(activeCall.peerId) : 'Voice call';
+  // Video elements only appear for video calls, and only once our own camera is live.
+  const isVideo = !!activeCall?.video;
+  const showVideo = isVideo && !incoming;
+  $('callVideo').style.display = showVideo ? '' : 'none';
+  $('callCamera').style.display = showVideo ? '' : 'none';
+  $('callOverlay').classList.toggle('call-video', showVideo);
 }
 function stopRingtone() {
   if (ringtoneTimer) clearInterval(ringtoneTimer);
@@ -110,6 +117,15 @@ function cleanupVoiceCall() {
   const audio = $('remoteCallAudio');
   if (audio) { audio.pause(); audio.srcObject = null; }
   activeCall = null;
+  for (const id of ['remoteCallVideo', 'localCallVideo']) {
+    const v = $(id);
+    if (v) { v.pause(); v.srcObject = null; }
+  }
+  $('callVideo').style.display = 'none';
+  $('callCamera').style.display = 'none';
+  $('callCamera').textContent = 'Camera off';
+  cameraOff = false;
+  $('callOverlay').classList.remove('call-video');
   $('callOverlay').style.display = 'none';
   $('callOverlay').classList.remove('call-active');
   $('callMute').textContent = 'Mute mic';
@@ -118,10 +134,16 @@ function cleanupVoiceCall() {
 }
 async function ensureCallMedia() {
   if (callLocalStream) return callLocalStream;
-  if (!navigator.mediaDevices?.getUserMedia) throw new Error('Microphone access requires a supported browser and HTTPS.');
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error('Microphone/camera access requires a supported browser and HTTPS.');
+  const wantVideo = !!activeCall?.video;
   callLocalStream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    video: wantVideo ? { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } : false
   });
+  if (wantVideo) {
+    const local = $('localCallVideo');
+    if (local) { local.srcObject = callLocalStream; local.play().catch(() => {}); }
+  }
   return callLocalStream;
 }
 function ensurePeerConnection() {
@@ -137,6 +159,12 @@ function ensurePeerConnection() {
     const audio = $('remoteCallAudio');
     audio.srcObject = event.streams[0];
     audio.play().catch(() => setCallStatus('Connected — tap the page if audio is blocked'));
+    // Sound always plays through the existing audio element (so speaker-mute keeps working);
+    // the remote <video> is muted and only shows the picture.
+    if (activeCall?.video) {
+      const remote = $('remoteCallVideo');
+      if (remote) { remote.srcObject = event.streams[0]; remote.play().catch(() => {}); }
+    }
   };
   callPeerConnection.onconnectionstatechange = () => {
     if (!callPeerConnection || !activeCall) return;
@@ -158,16 +186,19 @@ function ensurePeerConnection() {
   return callPeerConnection;
 }
 
-async function startVoiceCall() {
+function startVoiceCall() { return startCall(false); }
+function startVideoCall() { return startCall(true); }
+
+async function startCall(video) {
   await unlockCallAudio();
   await loadCallIceConfig();
   if (!peer || !socket?.connected) return alert('Open a chat and connect to the server first.');
   if (activeCall) return;
   if (!online.has(peer)) return alert('This user is offline. Try again when they are active.');
-  activeCall = { peerId: peer, role: 'caller', status: 'outgoing', callId: null };
+  activeCall = { peerId: peer, role: 'caller', status: 'outgoing', callId: null, video: !!video };
   showCallUi();
   setCallStatus('Calling…');
-  socket.emit('call:initiate', { to: peer });
+  socket.emit('call:initiate', { to: peer, video: !!video });
   callTimeout = setTimeout(() => {
     if (activeCall?.role === 'caller' && activeCall.status === 'outgoing') {
       socket.emit('call:end', { callId: activeCall.callId, reason: 'no-answer' });
@@ -211,6 +242,16 @@ function toggleCallMute() {
   setCallStatus(shouldEnable ? (speakerMuted ? 'Connected — speaker muted' : 'Connected') : 'Microphone muted');
 }
 
+function toggleCallCamera() {
+  if (!callLocalStream) return;
+  const tracks = callLocalStream.getVideoTracks();
+  if (!tracks.length) return;
+  const shouldEnable = tracks.some(track => !track.enabled);
+  tracks.forEach(track => { track.enabled = shouldEnable; });
+  cameraOff = !shouldEnable;
+  $('callCamera').textContent = shouldEnable ? 'Camera off' : 'Camera on';
+}
+
 function toggleSpeakerMute() {
   const audio = $('remoteCallAudio');
   if (!audio) return;
@@ -236,14 +277,14 @@ function processPendingCallAction() {
 }
 
 function initCallEvents() {
-  socket.on('call:incoming', ({ callId, from }) => {
+  socket.on('call:incoming', ({ callId, from, video }) => {
     if (activeCall) {
       socket.emit('call:reject', { callId });
       return;
     }
-    activeCall = { callId, peerId: Number(from), role: 'callee', status: 'incoming' };
+    activeCall = { callId, peerId: Number(from), role: 'callee', status: 'incoming', video: video === true };
     showCallUi({ incoming: true });
-    setCallStatus('Incoming voice call…');
+    setCallStatus(activeCall.video ? 'Incoming video call…' : 'Incoming voice call…');
     startRingtone();
     processPendingCallAction();
   });

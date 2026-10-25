@@ -335,3 +335,12 @@ body { color: #182338; letter-spacing: .01em; }
 .icon-button svg{width:20px;height:20px;display:block;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 #logoutBtn{color:#5b6477}
 #logoutBtn:hover{color:#d92d20;background:#fdecea}
+
+/* Video calling: additive styles. Voice calls never show #callVideo, so they look unchanged. */
+#videoCallBtn { flex-shrink: 0; border-radius: 12px; background: #edf3ff; color: #3157cf; }
+#callVideo { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #0f1420; border-radius: 12px; overflow: hidden; }
+#remoteCallVideo { width: 100%; height: 100%; object-fit: cover; display: block; background: #0f1420; }
+#localCallVideo { position: absolute; right: 8px; bottom: 8px; width: 28%; max-width: 120px; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; border: 2px solid #fff; background: #1c2333; transform: scaleX(-1); box-shadow: 0 4px 14px #0005; }
+#callOverlay.call-video .call-avatar { display: none; }
+#callOverlay.call-active.call-video { width: min(460px, calc(100vw - 36px)); }
+@media (max-width: 700px) { #callOverlay.call-active.call-video { width: auto; } }

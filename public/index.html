@@ -4,7 +4,7 @@
 <title>Simple Chat</title>
 <link rel="manifest" href="/manifest.json"><meta name="theme-color" content="#2f6fed">
 <link rel="apple-touch-icon" href="/icon-192.png">
-<link rel="stylesheet" href="/css/styles.css"></head><body>
+<link rel="stylesheet" href="/css/styles.css?v=5"></head><body>
 
 <div id="auth" style="display:none">
   <div id="authBox">
@@ -90,21 +90,25 @@
 </div>
 <div id="callOverlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="callTitle">
   <div class="sheet call-sheet">
-    <div class="sheetHead"><b id="callTitle">Voice call</b><button class="ghost" onclick="endVoiceCall()" aria-label="Close call">✕</button></div>
+    <div class="sheetHead"><b id="callTitle">Voice call</b><span id="callTimer"></span><button id="callClose" class="ghost" onclick="endVoiceCall()" aria-label="Close call">✕</button></div>
     <div id="callVideo" style="display:none">
       <video id="remoteCallVideo" autoplay playsinline muted></video>
       <video id="localCallVideo" autoplay playsinline muted></video>
     </div>
-    <div class="call-avatar" aria-hidden="true">☎</div>
+    <div id="callAvatar" class="call-avatar" aria-hidden="true">☎</div>
     <div id="callStatus" role="status" aria-live="polite">Ready</div>
+    <div id="callNotice" role="status" aria-live="polite"></div>
     <audio id="remoteCallAudio" autoplay></audio>
+    <div id="callQuick" role="group" aria-label="Quick replies"></div>
     <div class="call-actions">
-      <button id="callAccept" onclick="acceptVoiceCall()">Accept</button>
-      <button id="callReject" class="danger" onclick="rejectVoiceCall()">Decline</button>
-      <button id="callMute" class="ghost" onclick="toggleCallMute()">Mute mic</button>
-      <button id="callCamera" class="ghost" style="display:none" onclick="toggleCallCamera()">Camera off</button>
-      <button id="callSpeaker" class="ghost" onclick="toggleSpeakerMute()">Mute speaker</button>
-      <button id="callEnd" class="danger" onclick="endVoiceCall()">End call</button>
+      <button id="callAccept" onclick="acceptVoiceCall()" aria-label="Accept"><span class="ic">📞</span><span class="tx">Accept</span></button>
+      <button id="callReject" class="danger" onclick="rejectVoiceCall()" aria-label="Decline"><span class="ic">📞</span><span class="tx">Decline</span></button>
+      <button id="callMsg" class="ghost" style="display:none" onclick="toggleQuickReplies()" aria-label="Decline with a message"><span class="ic">💬</span><span class="tx">Message</span></button>
+      <button id="callMute" class="ghost" onclick="toggleCallMute()" aria-label="Mute microphone"><span class="ic">🎤</span><span class="tx">Mute mic</span></button>
+      <button id="callCamera" class="ghost" style="display:none" onclick="toggleCallCamera()" aria-label="Turn camera on or off"><span class="ic">📹</span><span class="tx">Camera off</span></button>
+      <button id="callFlip" class="ghost" style="display:none" onclick="switchCamera()" aria-label="Switch camera"><span class="ic">🔄</span><span class="tx">Flip camera</span></button>
+      <button id="callSpeaker" class="ghost" onclick="toggleSpeakerMute()" aria-label="Mute speaker"><span class="ic">🔊</span><span class="tx">Mute speaker</span></button>
+      <button id="callEnd" class="danger" onclick="endVoiceCall()" aria-label="End call"><span class="ic">📞</span><span class="tx">End call</span></button>
     </div>
   </div>
 </div>
@@ -118,5 +122,5 @@
 <script src="/js/attachments.js"></script>
 <script src="/js/push.js"></script>
 <script src="/js/socket.js"></script>
-<script src="/js/calls.js?v=3"></script>
+<script src="/js/calls.js?v=5"></script>
 <script src="/js/main.js"></script></body></html>

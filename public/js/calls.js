@@ -30,6 +30,13 @@ let callIceConfig = {
 };
 let callIceConfigLoaded = false;
 let callConnectionTimer = null;
+// ---- reconnection ----
+const CALL_RECONNECT_GIVE_UP_MS = 60000;
+let callReconnecting = false;
+let callReconnectStartedAt = 0;
+let callReconnectTimer = null;
+let callDisconnectTimer = null;
+let callRestartingIce = false;
 async function loadCallIceConfig() {
   if (callIceConfigLoaded) return;
   callIceConfigLoaded = true;
@@ -223,6 +230,9 @@ function clearCallTimer() {
 }
 function cleanupVoiceCall() {
   clearCallTimer();
+  endReconnecting();
+  if (callDisconnectTimer) clearTimeout(callDisconnectTimer);
+  callDisconnectTimer = null;
   if (callConnectionTimer) clearTimeout(callConnectionTimer);
   callConnectionTimer = null;
   stopRingtone();
@@ -256,7 +266,7 @@ function cleanupVoiceCall() {
   const av = $('callAvatar');
   if (av) { av.textContent = '☎'; av.classList.remove('has-photo'); }
   hideQuickReplies();
-  $('callOverlay').classList.remove('call-video', 'call-vid', 'call-incoming', 'call-has-remote', 'call-ui-hidden');
+  $('callOverlay').classList.remove('call-reconnecting', 'call-video', 'call-vid', 'call-incoming', 'call-has-remote', 'call-ui-hidden');
   $('callOverlay').style.display = 'none';
   $('callOverlay').classList.remove('call-active');
   setCallBtn('callMute', 'Mute mic', '🎤', false);
@@ -316,6 +326,71 @@ async function ensureCallMedia() {
   updateVideoControls();
   return callLocalStream;
 }
+// Which route is the media taking? 'relay' means it goes through the TURN server (diagnostics only).
+async function reportCallPath() {
+  try {
+    const pc = callPeerConnection;
+    const stats = await pc.getStats();
+    let pair = null;
+    stats.forEach(r => { if (r.type === 'transport' && r.selectedCandidatePairId) pair = stats.get(r.selectedCandidatePairId); });
+    if (!pair) stats.forEach(r => { if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded') pair = r; });
+    const local = pair && stats.get(pair.localCandidateId), remote = pair && stats.get(pair.remoteCandidateId);
+    const path = (local?.candidateType === 'relay' || remote?.candidateType === 'relay') ? 'relay' : (local?.candidateType || 'unknown');
+    window.__lastCallPath = path;
+    console.info('[call] media path:', path);
+    if (path === 'relay') showCallNotice('Connected through the relay server');
+  } catch (_) { /* never affects the call */ }
+}
+
+// ---- surviving a network drop ----
+function callMediaState() { return callPeerConnection?.connectionState; }
+
+// Caller only: ask for a fresh network path on the same peer connection (no new call, no new permissions).
+async function restartIce() {
+  if (!activeCall?.answered || activeCall.role !== 'caller' || !callPeerConnection || !socket?.connected || callRestartingIce) return;
+  callRestartingIce = true;
+  try {
+    const pc = callPeerConnection;
+    const offer = await pc.createOffer({ iceRestart: true });
+    await pc.setLocalDescription(offer);
+    socket.emit('call:offer', { callId: activeCall.callId, offer: pc.localDescription });
+  } catch (error) {
+    console.warn('ICE restart failed:', error);
+  } finally {
+    callRestartingIce = false;
+  }
+}
+// Callee or caller: get the media path moving again.
+function nudgeReconnect() {
+  if (!activeCall?.answered || !socket?.connected) return;
+  if (activeCall.role === 'caller') restartIce();
+  else socket.emit('call:restart-request', { callId: activeCall.callId });
+}
+function beginReconnecting() {
+  if (!activeCall?.answered || callReconnecting) return;
+  callReconnecting = true;
+  callReconnectStartedAt = Date.now();
+  $('callOverlay').classList.add('call-reconnecting');
+  setCallStatus('Reconnecting…');
+  callReconnectTimer = setInterval(() => {
+    if (!activeCall) return endReconnecting();
+    if (Date.now() - callReconnectStartedAt > CALL_RECONNECT_GIVE_UP_MS) {
+      if (socket?.connected && activeCall.callId) socket.emit('call:end', { callId: activeCall.callId, reason: 'connection-lost' });
+      setCallStatus('Call ended — connection lost');
+      return cleanupVoiceCall();
+    }
+    if (socket && !socket.connected) socket.connect();
+    nudgeReconnect();
+  }, 8000);
+}
+function endReconnecting() {
+  if (callReconnectTimer) clearInterval(callReconnectTimer);
+  callReconnectTimer = null;
+  callReconnecting = false;
+  const overlay = $('callOverlay');
+  if (overlay) overlay.classList.remove('call-reconnecting');
+}
+
 function ensurePeerConnection() {
   if (callPeerConnection) return callPeerConnection;
   callPeerConnection = new RTCPeerConnection(callIceConfig);
@@ -346,12 +421,27 @@ function ensurePeerConnection() {
     if (state === 'connected') {
       if (callConnectionTimer) clearTimeout(callConnectionTimer);
       callConnectionTimer = null;
+      if (callDisconnectTimer) clearTimeout(callDisconnectTimer);
+      callDisconnectTimer = null;
+      endReconnecting();
       setCallStatus('Connected');
+      reportCallPath();
       startCallTimer();
       armCallUiHide();
-    } else if (state === 'connecting') setCallStatus('Connecting…');
-    else if (state === 'failed') setCallStatus('Connection failed. Configure TURN or try another network.');
-    else if (state === 'disconnected') setCallStatus('Connection interrupted…');
+    } else if (state === 'connecting') { if (!callReconnecting) setCallStatus('Connecting…'); }
+    else if (state === 'failed') {
+      if (activeCall.answered) { beginReconnecting(); nudgeReconnect(); }
+      else setCallStatus('Connection failed. Configure TURN or try another network.');
+    } else if (state === 'disconnected') {
+      setCallStatus('Connection interrupted…');
+      // Brief blips often heal by themselves; if not within 3s, start reconnecting.
+      if (activeCall.answered && !callDisconnectTimer) {
+        callDisconnectTimer = setTimeout(() => {
+          callDisconnectTimer = null;
+          if (activeCall && callMediaState() !== 'connected') { beginReconnecting(); nudgeReconnect(); }
+        }, 3000);
+      }
+    }
   };
   callPeerConnection.oniceconnectionstatechange = () => {
     if (!callPeerConnection || !activeCall) return;
@@ -393,6 +483,7 @@ async function acceptVoiceCall() {
     activeCall.status = 'connecting';
     showCallUi();
     setCallStatus('Connecting…');
+    activeCall.answered = true;
     socket.emit('call:accept', { callId: activeCall.callId });
   } catch (error) {
     alert(error.message || 'Could not access your microphone. Check browser permissions.');
@@ -538,6 +629,7 @@ function initCallEvents() {
     if (!activeCall || activeCall.role !== 'caller' || activeCall.callId !== callId) return;
     clearCallTimer();
     activeCall.status = 'connecting';
+    activeCall.answered = true;
     try {
       await ensureCallMedia();
       const pc = ensurePeerConnection();
@@ -604,5 +696,39 @@ function initCallEvents() {
     if (reason === 'no-answer') setCallStatus('No answer');
     cleanupVoiceCall();
   });
-  socket.on('disconnect', () => { if (activeCall) cleanupVoiceCall(); });
+  // A dropped socket must not end an answered call: media keeps flowing peer-to-peer, and when the
+  // socket reconnects we re-attach to the same call. Ringing/unanswered calls still end as before.
+  socket.on('disconnect', () => {
+    if (activeCall && !activeCall.answered) cleanupVoiceCall();
+  });
+  socket.on('connect', () => {
+    if (activeCall?.answered && activeCall.callId) socket.emit('call:rejoin', { callId: activeCall.callId });
+  });
+  socket.on('call:rejoined', ({ callId, peerOnline }) => {
+    if (!activeCall || activeCall.callId !== callId) return;
+    if (peerOnline && callMediaState() !== 'connected') nudgeReconnect();
+  });
+  socket.on('call:peer-back', ({ callId }) => {
+    if (!activeCall || activeCall.callId !== callId) return;
+    if (callMediaState() !== 'connected') { if (activeCall.role === 'caller') restartIce(); }
+  });
+  socket.on('call:peer-lost', ({ callId }) => {
+    if (!activeCall || activeCall.callId !== callId || callMediaState() === 'connected') return;
+    setCallStatus('Waiting for the other person to reconnect…');
+  });
+  socket.on('call:restart-request', ({ callId }) => {
+    if (!activeCall || activeCall.callId !== callId || activeCall.role !== 'caller') return;
+    restartIce();
+  });
+  socket.on('call:rejoin-failed', ({ callId }) => {
+    if (!activeCall || activeCall.callId !== callId) return;
+    setCallStatus('Call ended');
+    cleanupVoiceCall();
+  });
+  // Internet came back: reconnect signaling right away instead of waiting for the next retry.
+  window.addEventListener('online', () => {
+    if (!activeCall?.answered) return;
+    if (socket && !socket.connected) socket.connect();
+    setTimeout(() => { if (activeCall && callMediaState() !== 'connected') nudgeReconnect(); }, 1500);
+  });
 }

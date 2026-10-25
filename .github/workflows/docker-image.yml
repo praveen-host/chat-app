@@ -28,7 +28,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: YOUR_DOCKERHUB_USERNAME/chat-app
+          images: yadavpk/my-chat-app
           tags: |
             type=raw,value=latest
             type=sha,prefix=sha-

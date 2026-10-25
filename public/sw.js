@@ -11,6 +11,20 @@ self.addEventListener('push', event => {
     const visibleClient = windows.some(c => c.visibilityState === 'visible' && c.focused);
     if (d.type === 'incoming-call' && visibleClient) return;
 
+    // The ring is over (answered/declined elsewhere, or caller gave up): clear the incoming-call notification.
+    if (d.type === 'call-cancelled' || d.type === 'missed-call') {
+      const open = await self.registration.getNotifications({ tag: 'call-' + d.callId });
+      open.forEach(n => n.close());
+      if (d.type === 'missed-call' && !visibleClient) {
+        await self.registration.showNotification('Missed ' + (d.video ? 'video' : 'voice') + ' call', {
+          body: d.callerName || 'Someone', tag: 'missed-' + d.fromId, renotify: true,
+          icon: '/icon-192.png', badge: '/icon-192.png',
+          data: { type: 'missed-call', fromId: d.fromId, toId: d.toId }
+        });
+      }
+      return;
+    }
+
     const isCall = d.type === 'incoming-call';
     await self.registration.showNotification(d.title || 'New message', {
       body: d.body || '',
@@ -18,9 +32,14 @@ self.addEventListener('push', event => {
       renotify: true,
       requireInteraction: isCall,
       vibrate: isCall ? [250, 150, 250, 150, 500] : undefined,
-      actions: isCall ? [{ action: 'accept', title: 'Accept' }, { action: 'reject', title: 'Reject' }] : [],
+      // Answer / Decline first: browsers that show fewer buttons drop the last ones.
+      actions: isCall ? [
+        { action: 'accept', title: 'Answer' },
+        { action: 'reject', title: 'Decline' },
+        { action: 'message', title: 'Message' }
+      ].slice(0, (self.Notification && Notification.maxActions) || 2) : [],
       icon: '/icon-192.png', badge: '/icon-192.png',
-      data: { type: d.type || 'message', callId: d.callId, fromId: d.fromId, toId: d.toId }
+      data: { type: d.type || 'message', callId: d.callId, fromId: d.fromId, toId: d.toId, video: d.video }
     });
   })());
 });
@@ -28,7 +47,7 @@ self.addEventListener('push', event => {
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   const data = event.notification.data || {};
-  const action = event.action === 'accept' || event.action === 'reject' ? event.action : 'open';
+  const action = ['accept', 'reject', 'message'].includes(event.action) ? event.action : 'open';
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     const url = data.type === 'incoming-call'

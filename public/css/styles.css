@@ -351,8 +351,97 @@ body { color: #182338; letter-spacing: .01em; }
   #voiceCallBtn, #videoCallBtn { min-width: 42px; min-height: 42px; padding: 0 10px; font-size: 18px; }
   #peerInfo { min-width: 0; flex: 1; }
   #peerName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
-  #callOverlay.call-active.call-video { inset: 0; padding: 8px; align-items: flex-end; }
-  #callOverlay.call-active.call-video .call-sheet { max-height: calc(100dvh - 16px); overflow-y: auto; padding-bottom: max(14px, env(safe-area-inset-bottom)); }
-  #callVideo { aspect-ratio: 3 / 4; max-height: 52dvh; }
-  .call-actions button { flex: 1 1 auto; }
+}
+
+/* ---- Call polish: timer, notice, camera controls (desktop card keeps text buttons) ---- */
+#callTimer { margin: 0 auto 0 8px; color: #55607a; font-variant-numeric: tabular-nums; }
+#callTimer:empty { display: none; }
+#callNotice { display: none; font-size: 13px; color: #55607a; background: #eef2fb; padding: 6px 10px; border-radius: 10px; }
+#callNotice.show { display: block; }
+.call-actions .ic { display: none; }
+#remoteCallVideo { opacity: 0; }
+#callOverlay.call-has-remote #remoteCallVideo { opacity: 1; }
+#localCallVideo.rear { transform: none; }
+.call-avatar.has-photo { background: transparent; font-size: 0; }
+.call-actions button.is-off { background: #34405a; color: #fff; }
+
+/* ---- WhatsApp-style full-screen video call on phones ---- */
+@media (max-width: 700px), (pointer: coarse) and (max-height: 500px) {
+  #callOverlay.call-active.call-vid {
+    inset: 0; width: auto; max-width: none; padding: 0; background: #0b1020; pointer-events: auto;
+    align-items: stretch; justify-content: stretch; backdrop-filter: none; z-index: 1000;
+  }
+  #callOverlay.call-active.call-vid .call-sheet {
+    position: relative; width: 100%; height: 100%; max-height: none; max-width: none;
+    padding: 0; gap: 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; color: #fff; overflow: hidden;
+  }
+  #callOverlay.call-vid #callVideo {
+    position: absolute; inset: 0; z-index: 0; width: auto; aspect-ratio: auto; max-height: none; border-radius: 0; background: #0b1020;
+  }
+  #callOverlay.call-vid #localCallVideo {
+    top: calc(env(safe-area-inset-top, 0px) + 84px); right: 12px; bottom: auto; width: 96px; height: 128px; max-width: none;
+    aspect-ratio: auto; z-index: 2; touch-action: none; border-radius: 14px;
+  }
+  #callOverlay.call-vid .sheetHead {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 3; flex-direction: column; align-items: center; gap: 2px;
+    padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 26px; background: linear-gradient(#000b, transparent); pointer-events: none; transition: opacity .25s;
+  }
+  #callOverlay.call-vid #callTitle { font-size: 19px; }
+  #callOverlay.call-vid #callTimer { margin: 0; color: #e6ebf5; font-size: 15px; }
+  #callOverlay.call-vid #callClose { display: none; }
+  #callOverlay.call-vid #callStatus {
+    position: absolute; left: 0; right: 0; top: calc(env(safe-area-inset-top, 0px) + 50px); z-index: 3;
+    text-align: center; color: #e6ebf5; text-shadow: 0 1px 4px #0008; min-height: 0; transition: opacity .25s;
+  }
+  #callOverlay.call-vid.call-has-timer #callStatus { top: calc(env(safe-area-inset-top, 0px) + 74px); }
+  #callOverlay.call-vid #callStatus[data-state="ok"] { display: none; }
+  #callOverlay.call-vid #callNotice {
+    position: absolute; left: 50%; transform: translateX(-50%); z-index: 3; white-space: nowrap;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 120px); background: #000a; color: #fff;
+  }
+  #callOverlay.call-active.call-vid .call-avatar {
+    position: absolute; top: 36%; left: 50%; transform: translate(-50%, -50%); z-index: 1;
+    width: 112px; height: 112px; font-size: 52px; background: #1d2740; color: #9db4ff; display: grid;
+  }
+  #callOverlay.call-active.call-vid .call-avatar.has-photo { background: transparent; }
+  #callOverlay.call-active.call-vid.call-has-remote .call-avatar { display: none; }
+  #callOverlay.call-vid .call-actions {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; flex-wrap: nowrap; justify-content: center; gap: 12px;
+    padding: 30px 12px calc(env(safe-area-inset-bottom, 0px) + 22px); background: linear-gradient(transparent, #000b); transition: opacity .25s;
+  }
+  #callOverlay.call-active.call-vid .call-actions button {
+    flex: 0 0 auto; width: 54px; height: 54px; min-height: 0; padding: 0; border: 0; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,.2); color: #fff; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  }
+  #callOverlay.call-vid .call-actions .ic { display: inline-block; font-size: 24px; line-height: 1; }
+  #callOverlay.call-vid .call-actions .tx { display: none; }
+  #callOverlay.call-active.call-vid .call-actions button.is-off { background: #fff; color: #111; }
+  #callOverlay.call-active.call-vid #callAccept { background: #25d366; width: 64px; height: 64px; }
+  #callOverlay.call-active.call-vid #callReject,
+  #callOverlay.call-active.call-vid #callEnd { background: #ea3d3d; }
+  #callOverlay.call-active.call-vid #callReject { width: 64px; height: 64px; }
+  #callOverlay.call-vid #callReject .ic, #callOverlay.call-vid #callEnd .ic { transform: rotate(135deg); }
+  #callOverlay.call-vid.call-incoming .call-actions { gap: 64px; }
+  #callOverlay.call-vid.call-incoming #callSpeaker { display: none; }
+  #callOverlay.call-vid.call-ui-hidden .sheetHead,
+  #callOverlay.call-vid.call-ui-hidden #callStatus,
+  #callOverlay.call-vid.call-ui-hidden .call-actions { opacity: 0; pointer-events: none; }
+}
+
+/* ---- Incoming call: "Message" option + quick replies ---- */
+#callQuick { display: none; flex-wrap: wrap; justify-content: center; gap: 8px; width: 100%; }
+#callQuick.show { display: flex; }
+#callQuick button { border-radius: 999px; padding: 8px 14px; font-size: 14px; }
+@media (max-width: 700px), (pointer: coarse) and (max-height: 500px) {
+  #callOverlay.call-vid #callQuick.show {
+    position: absolute; left: 14px; right: 14px; z-index: 4; flex-direction: column; align-items: stretch; gap: 8px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 140px); padding: 12px; border-radius: 18px;
+    background: rgba(18, 26, 46, .94); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  }
+  #callOverlay.call-vid #callQuick button { background: rgba(255,255,255,.12); color: #fff; text-align: left; padding: 12px 16px; border: 0; }
+  #callOverlay.call-vid.call-incoming .call-actions { gap: 40px; }
+  #callOverlay.call-vid.call-incoming #callReject { order: 1; }
+  #callOverlay.call-vid.call-incoming #callMsg { order: 2; width: 54px; }
+  #callOverlay.call-vid.call-incoming #callAccept { order: 3; }
 }

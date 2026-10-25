@@ -16,7 +16,7 @@ async function start() {
     const callAction = params.get('callAction');
     if (callId) {
       socket.emit('call:resume', { callId });
-      if (callAction === 'accept' || callAction === 'reject') {
+      if (callAction === 'accept' || callAction === 'reject' || callAction === 'message') {
         window.__pendingCallNotificationAction = { action: callAction, callId };
       }
       history.replaceState(null, '', '/');

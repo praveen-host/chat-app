@@ -2,6 +2,7 @@
 const crypto = require('crypto');
 const rt = require('../realtime');
 const push = require('../push');
+const { pool } = require('../db');
 
 const calls = new Map();             // callId -> call
 const activeByUser = new Map();      // userId -> callId
@@ -10,6 +11,24 @@ function clearCall(call) {
   calls.delete(call.id);
   if (activeByUser.get(call.callerId) === call.id) activeByUser.delete(call.callerId);
   if (activeByUser.get(call.calleeId) === call.id) activeByUser.delete(call.calleeId);
+}
+
+async function displayNameOf(id) {
+  try {
+    const [rows] = await pool.query('SELECT display_name, username FROM users WHERE id = ? LIMIT 1', [id]);
+    return (rows[0] && (rows[0].display_name || rows[0].username)) || 'Someone';
+  } catch (_) { return 'Someone'; }
+}
+
+// Tell the callee's devices the ring is over: closes the incoming-call notification
+// everywhere, and (for an unanswered call) leaves a "missed call" notification behind.
+async function closeIncomingNotification(call, kind) {
+  try {
+    const callerName = kind === 'missed-call' ? await displayNameOf(call.callerId) : undefined;
+    await push.sendPush(call.calleeId, {
+      type: kind, callId: call.id, fromId: call.callerId, toId: call.calleeId, video: call.video, callerName
+    });
+  } catch (err) { console.error('Call-closed push failed:', err.message); }
 }
 
 async function emitToSocket(userId, socketId, event, payload) {
@@ -40,9 +59,13 @@ function register(socket) {
     activeByUser.set(calleeId, call.id);
     // Notify hidden/closed clients through Web Push as well as live Socket.IO tabs.
     rt.emitToUser(calleeId, 'call:incoming', { callId: call.id, from: userId, video: call.video });
-    push.sendPush(calleeId, { type: 'incoming-call', title: call.video ? 'Incoming video call' : 'Incoming voice call', body: 'Someone is calling you.', callId: call.id, fromId: userId, toId: calleeId })
-      .catch(err => console.error('Incoming-call push failed:', err.message));
     socket.emit('call:ringing', { callId: call.id, to: calleeId });
+    const callerName = await displayNameOf(userId);
+    push.sendPush(calleeId, {
+      type: 'incoming-call', title: callerName,
+      body: call.video ? 'Incoming video call' : 'Incoming voice call',
+      callId: call.id, fromId: userId, toId: calleeId, video: call.video, callerName
+    }).catch(err => console.error('Incoming-call push failed:', err.message));
   });
 
   // A push notification can reopen the app after its original page was closed.
@@ -61,6 +84,7 @@ function register(socket) {
       return socket.emit('call:error', { message: 'This call is no longer available.' });
     }
     call.calleeSocketId = socket.id;
+    closeIncomingNotification(call, 'call-cancelled');
     await emitToSocket(call.callerId, call.callerSocketId, 'call:accepted', { callId: call.id, by: userId });
   });
 
@@ -68,6 +92,7 @@ function register(socket) {
     const call = calls.get(callId);
     if (!call || call.calleeId !== userId || call.calleeSocketId) return;
     clearCall(call);
+    closeIncomingNotification(call, 'call-cancelled');
     await emitToSocket(call.callerId, call.callerSocketId, 'call:rejected', { callId: call.id, by: userId });
   });
 
@@ -99,6 +124,7 @@ function register(socket) {
     const call = calls.get(callId);
     if (!call || (socket.id !== call.callerSocketId && socket.id !== call.calleeSocketId)) return;
     clearCall(call);
+    if (socket.id === call.callerSocketId && !call.calleeSocketId) closeIncomingNotification(call, 'missed-call');
     const payload = { callId: call.id, reason: typeof reason === 'string' ? reason.slice(0, 40) : 'ended' };
     if (socket.id === call.callerSocketId) {
       if (call.calleeSocketId) await emitToSocket(call.calleeId, call.calleeSocketId, 'call:ended', payload);
@@ -113,6 +139,7 @@ function register(socket) {
     const call = calls.get(callId);
     if (!call || (socket.id !== call.callerSocketId && socket.id !== call.calleeSocketId)) return;
     clearCall(call);
+    if (socket.id === call.callerSocketId && !call.calleeSocketId) closeIncomingNotification(call, 'missed-call');
     const payload = { callId: call.id, reason: 'disconnect' };
     if (socket.id === call.callerSocketId) {
       if (call.calleeSocketId) await emitToSocket(call.calleeId, call.calleeSocketId, 'call:ended', payload);

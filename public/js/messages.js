@@ -163,13 +163,15 @@ function messageEl(m) {
     d.appendChild(im);
   }
   if (m.body) { const text = document.createElement('div'); text.textContent = m.body; d.appendChild(text); }
-  meta.innerHTML = `<span>${fmtTime(m.ts)}</span>${m.mine ? tickHtml(m.status) : ''}`;
+  meta.innerHTML = `<span>${fmtTime(m.ts)}${m.editedAt ? ' · edited' : ''}</span>${m.mine ? tickHtml(m.status) : ''}`;
   d.appendChild(meta);
 
   // Reply / Delete buttons: hover on desktop, tap the bubble on phones
   const actions = document.createElement('div'); actions.className = 'actions';
   const mk = (label, title, fn) => { const b = document.createElement('button'); b.textContent = label; b.title = title; b.onclick = e => { e.stopPropagation(); fn(); }; return b; };
-  actions.append(mk('↩', 'Reply', () => startReply(m)), mk('🗑', 'Delete', () => askDelete(m)));
+  actions.append(mk('↩', 'Reply', () => startReply(m)));
+  if (m.mine && !m.deleted && ['sent', 'delivered', 'read'].includes(m.status) && m.body) actions.append(mk('✏️', 'Edit message', () => editMessage(m)));
+  actions.append(mk('🗑', 'Delete', () => askDelete(m)));
   if (m.mine && m.status === 'failed' && m.retryable) {
     actions.append(mk('↻', 'Retry sending', () => transmitMessage(m, Number(m.to || peer))));
   }
@@ -268,3 +270,24 @@ $('text').addEventListener('input', () => {
   clearTimeout(typingStopTimer);
   typingStopTimer = setTimeout(stopTyping, 2000);
 });
+
+/* Quick emoji insertion; keeps the existing message composer and send flow. */
+function insertEmoji() {
+  const choices = ['😀','😂','🥰','😍','😊','👍','❤️','🙏','🎉','😢','😮','🔥'];
+  const chosen = prompt('Choose an emoji by number:\n' + choices.map((e, i) => `${i + 1}. ${e}`).join('   '));
+  const n = Number(chosen);
+  if (!Number.isInteger(n) || n < 1 || n > choices.length) return;
+  const input = $('text'), start = input.selectionStart ?? input.value.length, end = input.selectionEnd ?? start;
+  input.value = input.value.slice(0, start) + choices[n - 1] + input.value.slice(end);
+  input.focus(); input.setSelectionRange(start + choices[n - 1].length, start + choices[n - 1].length);
+}
+function editMessage(m) {
+  const body = prompt('Edit your message:', m.body || '');
+  if (body == null || !body.trim() || body.trim() === m.body) return;
+  const target = Number(m.to || peer);
+  socket.emit('message:edit', { to: target, cid: m.cid, body: body.trim() }, result => {
+    if (!result || !result.ok) return alert('Could not edit message. Please try again.');
+    m.body = result.body; m.editedAt = result.editedAt;
+    if (peer === target) renderChat();
+  });
+}

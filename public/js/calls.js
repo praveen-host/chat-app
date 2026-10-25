@@ -13,6 +13,7 @@ let cameraFacing = 'user';
 let canFlipCamera = false;
 let callStartedAt = 0;
 let callTimerInterval = null;
+let callQualityInterval = null;
 let callUiTimer = null;
 let callNoticeTimer = null;
 let callUiBound = false;
@@ -229,6 +230,10 @@ function clearCallTimer() {
   callTimeout = null;
 }
 function cleanupVoiceCall() {
+  if (callQualityInterval) clearInterval(callQualityInterval);
+  callQualityInterval = null;
+  const qualityEl = $('callQuality'); if (qualityEl) qualityEl.textContent = 'Connection quality: checking…';
+  const peerMediaEl = $('callPeerMediaStatus'); if (peerMediaEl) peerMediaEl.textContent = '';
   clearCallTimer();
   endReconnecting();
   if (callDisconnectTimer) clearTimeout(callDisconnectTimer);
@@ -427,6 +432,7 @@ function ensurePeerConnection() {
       setCallStatus('Connected');
       reportCallPath();
       startCallTimer();
+    startCallQualityMonitor();
       armCallUiHide();
     } else if (state === 'connecting') { if (!callReconnecting) setCallStatus('Connecting…'); }
     else if (state === 'failed') {
@@ -530,6 +536,40 @@ function endVoiceCall() {
   if (activeCall?.callId && socket?.connected) socket.emit('call:end', { callId: activeCall.callId, reason: 'hangup' });
   cleanupVoiceCall();
 }
+function publishCallMediaState() {
+  if (!activeCall?.callId || !socket?.connected) return;
+  socket.emit('call:media-state', {
+    callId: activeCall.callId,
+    microphoneMuted,
+    cameraOff: !!activeCall.video && cameraOff
+  });
+}
+function startCallQualityMonitor() {
+  if (callQualityInterval) clearInterval(callQualityInterval);
+  const update = async () => {
+    const el = $('callQuality');
+    if (!el || !callPeerConnection || callPeerConnection.connectionState !== 'connected') {
+      if (el && activeCall) el.textContent = 'Connection quality: reconnecting…';
+      return;
+    }
+    try {
+      const stats = await callPeerConnection.getStats();
+      let pair = null;
+      stats.forEach(r => {
+        if (r.type === 'candidate-pair' && r.state === 'succeeded' && (r.nominated || r.selected)) pair = r;
+      });
+      let local = pair && stats.get(pair.localCandidateId);
+      let remote = pair && stats.get(pair.remoteCandidateId);
+      let relay = local?.candidateType === 'relay' || remote?.candidateType === 'relay';
+      let rtt = pair?.currentRoundTripTime;
+      let quality = !Number.isFinite(rtt) ? 'Checking' : rtt < 0.15 ? 'Good' : rtt < 0.35 ? 'Fair' : 'Weak';
+      el.textContent = `Quality: ${quality} · ${relay ? 'TURN relay' : 'Direct / non-relay'}`;
+      el.dataset.quality = quality.toLowerCase();
+    } catch (_) { if (el) el.textContent = 'Connection quality: unavailable'; }
+  };
+  update();
+  callQualityInterval = setInterval(update, 3000);
+}
 function toggleCallMute() {
   if (!callLocalStream) return;
   const tracks = callLocalStream.getAudioTracks();
@@ -538,6 +578,7 @@ function toggleCallMute() {
   microphoneMuted = !shouldEnable;
   setCallBtn('callMute', shouldEnable ? 'Mute mic' : 'Unmute mic', shouldEnable ? '🎤' : '🔇', !shouldEnable);
   setCallStatus(shouldEnable ? (speakerMuted ? 'Connected — speaker muted' : 'Connected') : 'Microphone muted');
+  publishCallMediaState();
 }
 
 function toggleCallCamera() {
@@ -548,6 +589,7 @@ function toggleCallCamera() {
   tracks.forEach(track => { track.enabled = shouldEnable; });
   cameraOff = !shouldEnable;
   setCallBtn('callCamera', shouldEnable ? 'Camera off' : 'Camera on', shouldEnable ? '📹' : '🚫', !shouldEnable);
+  publishCallMediaState();
 }
 
 async function switchCamera() {
@@ -606,6 +648,16 @@ function processPendingCallAction() {
 }
 
 function initCallEvents() {
+  socket.on('call:media-state', ({ callId, microphoneMuted: peerMicMuted, cameraOff: peerCameraOff }) => {
+    if (!activeCall || activeCall.callId !== callId) return;
+    const el = $('callPeerMediaStatus');
+    if (!el) return;
+    const states = [];
+    if (peerMicMuted) states.push('Microphone off');
+    if (activeCall.video && peerCameraOff) states.push('Camera off');
+    el.textContent = states.length ? `Other person: ${states.join(' · ')}` : 'Other person: microphone on' + (activeCall.video ? ' · camera on' : '');
+  });
+
   bindCallUi();
   loadCallIceConfig(); // preload TURN config so tapping Accept goes straight to the camera prompt
   socket.on('call:incoming', ({ callId, from, video }) => {

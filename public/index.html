@@ -50,6 +50,7 @@
       <button class="ghost" onclick="$('file').click()" title="Attach photo">📎</button>
       <input id="file" type="file" accept="image/*" hidden onchange="pickImage(this)">
       <input id="text" placeholder="Type a message" autocomplete="off" onkeydown="if(event.key==='Enter')send()">
+      <button class="ghost" onclick="insertEmoji()" title="Insert emoji" aria-label="Insert emoji">😊</button>
       <button onclick="send()">Send</button>
     </div>
   </div>

@@ -34,7 +34,7 @@
  #msgs{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:6px}
  .empty{margin:auto;color:#888;text-align:center;padding:20px}
  .m{max-width:78%;padding:8px 12px 4px;border-radius:14px;background:var(--card);word-wrap:break-word;overflow-wrap:anywhere;box-shadow:0 1px 1px #0001}
- .me{align-self:flex-end;background:var(--mine)}
+ .m.me{align-self:flex-end;background:var(--mine)}
  .them{align-self:flex-start}
  .meta{display:flex;justify-content:flex-end;align-items:center;gap:4px;font-size:11px;color:#777;margin-top:2px}
  .tick{font-weight:700;letter-spacing:-3px;padding-right:3px}
@@ -103,3 +103,244 @@
 .call-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 #remoteCallAudio { width: 0; height: 0; }
 @media (max-width: 700px) { .call-sheet { height: auto; max-height: 90dvh; border-radius: 14px; } }
+
+/* Compact persistent in-app call bar; notifications are handled by the service worker. */
+#callOverlay.call-active {
+  display: flex !important;
+  inset: auto 18px 18px auto;
+  width: min(390px, calc(100vw - 36px));
+  background: transparent;
+  justify-content: flex-end;
+  align-items: flex-end;
+  pointer-events: none;
+  z-index: 1000;
+}
+#callOverlay.call-active .call-sheet {
+  pointer-events: auto;
+  width: 100%; max-width: none; max-height: 70vh;
+  border: 1px solid var(--line); box-shadow: 0 8px 32px #0003;
+  border-radius: 16px; padding: 14px; gap: 10px;
+}
+#callOverlay.call-active .call-avatar { width: 42px; height: 42px; font-size: 22px; }
+#callOverlay.call-active .call-actions button { min-height: 38px; }
+@media (max-width: 700px) {
+  #callOverlay.call-active { inset: auto 10px 10px 10px; width: auto; }
+  #callOverlay.call-active .call-sheet { height: auto; max-width: none; border-radius: 16px; }
+}
+
+/* Compact account header actions */
+#sideHead{gap:8px;padding:10px 12px}
+.me{flex:1;gap:8px}
+.me-details{display:flex;flex-direction:column;min-width:0;gap:2px}
+.me-details b{font-size:14px}
+#meLastLogin{font-size:10px;color:#7b818a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+.side-actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
+.icon-button{width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;padding:0;font-size:20px;line-height:1;border-radius:10px}
+.icon-button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media(max-width:700px){#sideHead{padding:12px}.icon-button{width:40px;height:40px}#meLastLogin{max-width:145px}}
+
+
+/* Modern responsive refresh: visual-only overrides that preserve existing layout and behavior. */
+:root{--bg:#f3f6fb;--card:#fff;--line:#e7ebf2;--accent:#3867f5;--mine:#dce8ff;--green:#16a765;--gray:#a4adbd;--read:#3979ed}
+body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:#172033}
+button{border-radius:12px;padding:9px 14px;font-weight:600;transition:transform .15s ease,filter .15s ease,background .15s ease}
+button:hover{filter:brightness(.97)}button:active{transform:scale(.98)}
+button.ghost{border-color:transparent;background:#f1f4fa;color:#34405a}
+button.ghost:hover{background:#e8edf7}
+button.danger{background:#e5484d}
+input{border-radius:12px;border-color:#dfe5ef;background:#fff;outline:none;transition:border-color .15s,box-shadow .15s}
+input:focus{border-color:#7594ff;box-shadow:0 0 0 3px #3867f51a}
+#auth{background:radial-gradient(ellipse at top left,#e0eaff 0,transparent 45%),var(--bg)}
+#authBox{border:1px solid #ffffffd9;border-radius:24px;padding:32px;box-shadow:0 24px 70px #1b2c5018;gap:14px}
+#authBox h3{font-size:25px;letter-spacing:-.7px}
+#side{background:#fbfcff;border-right:1px solid #e7ebf2}
+#sideHead{padding:16px 18px;background:#fff;min-height:78px}
+.me-details small{color:#8993a6}
+.side-actions{display:flex;gap:6px}
+.icon-button{width:38px;height:38px;padding:0;display:inline-flex;align-items:center;justify-content:center;font-size:18px}
+#list{padding:8px}
+.user{border:0;border-radius:14px;padding:12px;margin:3px 0;gap:11px;transition:background .15s}
+.user:hover{background:#f0f4fb}
+.user.active{background:#e8efff}
+.user .name{font-weight:650;color:#202b42}
+.user .about,.user .sub{color:#7e899d;font-size:12px}
+.user .info{min-width:0;flex:1}
+.user .about{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.presence-label{white-space:nowrap;font-size:11px!important}
+#main{background:#f5f7fc}
+#head{padding:12px 18px;min-height:72px;box-shadow:0 1px 0 #e7ebf2}
+#peerName{font-weight:700;letter-spacing:-.2px}
+#peerStatus{font-size:12px;margin-top:3px}
+#peerStatus.is-online{color:#159b5b}
+#peerStatus.is-offline{color:#7e899d}
+#msgs{padding:20px;gap:9px;background:linear-gradient(180deg,#f6f8fc,#f1f5fb)}
+.m{border:1px solid #e7ebf2;border-radius:18px;padding:10px 14px 6px;box-shadow:0 3px 10px #263b5b08}
+.m.me{background:var(--mine);border-color:#cbdcff;border-bottom-right-radius:6px}
+.m.them{background:#fff;border-bottom-left-radius:6px}
+#form{padding:12px 16px;background:#fff;gap:10px}
+#form input#text{background:#f5f7fb;border-color:transparent;padding:12px 15px}
+#form input#text:focus{background:#fff;border-color:#7594ff}
+#form button{min-height:42px}
+#preview,#replyBar{background:#fff}
+.overlay .sheet{border-radius:22px;box-shadow:0 24px 80px #0e1b352b}
+@media(max-width:700px){
+  #sideHead{padding:12px 14px}
+  #head{padding:10px 12px;min-height:64px}
+  #msgs{padding:14px}
+  #form{padding:9px;padding-bottom:max(9px,env(safe-area-inset-bottom))}
+}
+
+
+/* Follow-up polish: isolate message bubbles from the account-row .me styles,
+   and keep the composer compact instead of allowing its input to stretch. */
+#app { min-height: 0; }
+#side, #main { min-height: 0; }
+#list, #msgs { min-height: 0; overscroll-behavior: contain; }
+#side { box-shadow: 8px 0 28px rgba(25, 42, 75, .035); }
+#sideHead { position: relative; z-index: 1; }
+.user { min-height: 68px; }
+.user .info { overflow: hidden; }
+.user .sub { display: block; max-width: 126px; overflow: hidden; text-overflow: ellipsis; }
+.user .presence-label.is-online { color: #13965a; font-weight: 650; }
+.user .presence-label.is-offline { color: #7b8496; }
+#head { flex-shrink: 0; }
+#msgs { flex: 1 1 auto; min-height: 0; align-items: stretch; }
+#msgs > .empty { align-self: center; }
+#msgs .m {
+  display: block;
+  position: relative;
+  flex: 0 0 auto;
+  width: fit-content;
+  max-width: min(78%, 680px);
+  min-width: 0;
+  align-self: flex-start;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 10px 13px 6px;
+  border-radius: 18px;
+  box-shadow: 0 3px 12px rgba(24, 39, 75, .055);
+}
+#msgs .m.me {
+  display: block;
+  align-self: flex-end;
+  cursor: default;
+  background: #dce8ff;
+  border: 1px solid #c9d9ff;
+  border-bottom-right-radius: 6px;
+}
+#msgs .m.them {
+  display: block;
+  align-self: flex-start;
+  background: #fff;
+  border: 1px solid #e7ebf2;
+  border-bottom-left-radius: 6px;
+}
+#msgs .m .meta { white-space: nowrap; }
+#form {
+  display: none;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 66px;
+  gap: 9px;
+  padding: 10px 14px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  border-top: 1px solid #e7ebf2;
+  box-shadow: 0 -6px 20px rgba(25, 42, 75, .025);
+}
+#form button { flex: 0 0 auto; min-height: 42px; }
+#form input#text {
+  flex: 1 1 auto;
+  width: 0;
+  min-width: 0;
+  height: 44px;
+  min-height: 44px;
+  max-height: 44px;
+  line-height: 1.35;
+  padding: 10px 15px;
+  border-radius: 14px;
+  box-shadow: none;
+}
+#form input#text:focus { box-shadow: 0 0 0 3px rgba(56, 103, 245, .12); }
+#form input#file { display: none; }
+#form button:first-child {
+  width: 42px;
+  padding: 0;
+  border-radius: 13px;
+  background: #f0f3fa;
+  font-size: 18px;
+}
+#form button:last-child { border-radius: 13px; padding-inline: 18px; }
+#preview, #replyBar { flex: 0 0 auto; }
+#replyBar { min-width: 0; }
+#replyBar .rbody { overflow: hidden; }
+#peerInfo { overflow: hidden; }
+#peerStatus { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+button:focus-visible, input:focus-visible {
+  outline: 2px solid rgba(56, 103, 245, .55);
+  outline-offset: 2px;
+}
+@media (max-width: 700px) {
+  #msgs .m { max-width: 88%; }
+  #form { gap: 7px; padding-inline: 9px; }
+  #form input#text { font-size: 16px; }
+  #form button:last-child { padding-inline: 13px; }
+  .user .sub { max-width: 110px; }
+}
+
+
+/* Modern visual finish */
+:root { --accent: #4263eb; --bg: #f2f5fb; --card: #ffffff; --line: #e5eaf3; }
+body { color: #182338; letter-spacing: .01em; }
+#auth { background: radial-gradient(circle at 15% 15%, #dce7ff 0, transparent 34%), radial-gradient(circle at 90% 85%, #e5e0ff 0, transparent 32%), #f3f6fc; }
+#authBox { background: rgba(255,255,255,.92); backdrop-filter: blur(18px); border: 1px solid rgba(255,255,255,.95); border-radius: 26px; padding: 34px; box-shadow: 0 28px 80px rgba(33,54,100,.13); }
+#authBox h3 { color: #17233b; font-weight: 760; }
+#authBox button { min-height: 44px; border-radius: 13px; }
+#authBox button:not(.ghost) { box-shadow: 0 7px 16px rgba(66,99,235,.2); }
+#side { background: #fff; border-right-color: #e8edf5; }
+#sideHead { border-bottom-color: #edf0f6; }
+#list { padding: 10px; }
+.user { border-radius: 16px; margin: 3px 0; padding: 12px; }
+.user:hover { background: #f5f7fc; }
+.user.active { background: linear-gradient(110deg,#eaf0ff,#f2f5ff); box-shadow: inset 3px 0 #4263eb; }
+.user .name { font-size: 14px; }
+.user .about { margin-top: 3px; }
+#head { background: rgba(255,255,255,.96); border-bottom-color: #e9edf5; }
+#peerName { font-size: 15px; }
+#voiceCallBtn { border-radius: 12px; background: #edf3ff; color: #3157cf; }
+#delBtn { border-radius: 12px; }
+#msgs { background: linear-gradient(180deg,#f5f7fc,#f0f4fa); }
+#msgs .m { font-size: 14px; }
+#msgs .m.me { background: linear-gradient(135deg,#e3ecff,#d8e5ff); }
+#msgs .m.them { background: #fff; }
+#form { background: rgba(255,255,255,.97); }
+#form button:last-child { box-shadow: 0 5px 12px rgba(66,99,235,.18); }
+#form button:first-child:hover { background: #e7edfa; }
+.overlay { backdrop-filter: blur(7px); background: rgba(16,25,44,.42); }
+.overlay .sheet { border: 1px solid rgba(255,255,255,.8); }
+@media (min-width: 701px) {
+  #side { width: 330px; }
+  #main { margin: 8px 8px 8px 0; border: 1px solid #e6ebf4; border-radius: 20px; overflow: hidden; box-shadow: 0 12px 38px rgba(30,48,85,.06); }
+  #head { padding-inline: 20px; }
+  #msgs { padding: 22px; }
+}
+@media (max-width: 700px) {
+  #side { background: #fbfcff; }
+  #main { background: #f4f6fb; }
+  #head { padding-top: max(10px,env(safe-area-inset-top)); }
+}
+
+/* Account header: no tinted background on the profile row; crisp SVG action icons */
+#sideHead .me{background:transparent;box-shadow:none;border:0;align-self:center}
+.icon-button svg{width:20px;height:20px;display:block;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#logoutBtn{color:#5b6477}
+#logoutBtn:hover{color:#d92d20;background:#fdecea}
+
+/* Video calling: additive styles. Voice calls never show #callVideo, so they look unchanged. */
+#videoCallBtn { flex-shrink: 0; border-radius: 12px; background: #edf3ff; color: #3157cf; }
+#callVideo { position: relative; width: 100%; aspect-ratio: 4 / 3; background: #0f1420; border-radius: 12px; overflow: hidden; }
+#remoteCallVideo { width: 100%; height: 100%; object-fit: cover; display: block; background: #0f1420; }
+#localCallVideo { position: absolute; right: 8px; bottom: 8px; width: 28%; max-width: 120px; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; border: 2px solid #fff; background: #1c2333; transform: scaleX(-1); box-shadow: 0 4px 14px #0005; }
+#callOverlay.call-video .call-avatar { display: none; }
+#callOverlay.call-active.call-video { width: min(460px, calc(100vw - 36px)); }
+@media (max-width: 700px) { #callOverlay.call-active.call-video { width: auto; } }

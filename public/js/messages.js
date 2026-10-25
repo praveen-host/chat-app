@@ -3,14 +3,92 @@ const userName = id => id === me.id ? 'You' : ((users.find(u => u.id === id) || 
 
 /* ---------- receiving / read receipts ---------- */
 function receive(m) {
+  const list = (history[m.from] ||= []);
+  // Socket.IO can redeliver an unacknowledged message after reconnect. Deduplicate by sender + cid.
+  if (m.cid && list.some(x => x.cid === m.cid)) return;
   const entry = { ...m, mine: false, read: false };
-  if (m.image) entry.imgUrl = URL.createObjectURL(new Blob([m.image], { type: 'image/jpeg' }));   // memory only, no URL on the server
+  if (m.image) entry.imgUrl = URL.createObjectURL(new Blob([m.image], { type: 'image/jpeg' }));
   delete entry.image;
-  (history[m.from] ||= []).push(entry);
+  list.push(entry);
   clearTyping(m.from);
   if (peer !== m.from) unread[m.from] = (unread[m.from] || 0) + 1;
   renderUsers();
   if (peer === m.from) { renderChat(); markRead(); }
+}
+
+// Load durable conversation history after opening a chat or reconnecting.
+function loadChatHistory(id) {
+  if (!socket || !socket.connected || id == null) return;
+  socket.emit('chat:history', { peerId: Number(id), limit: 200 }, result => {
+    if (!result || !result.ok || !Array.isArray(result.messages)) return;
+    const current = history[id] || [];
+    const byCid = new Map(current.filter(m => m.cid).map(m => [m.cid, m]));
+    const merged = result.messages.map(m => {
+      const existing = m.cid ? byCid.get(m.cid) : null;
+      if (existing) {
+        if (RANK[m.status] > RANK[existing.status]) existing.status = m.status;
+        if (m.deleted) markDeleted(existing);
+        byCid.delete(m.cid);
+        return existing;
+      }
+      const item = { ...m, read: !!m.status && m.status === 'read' };
+      if (item.image) item.imgUrl = URL.createObjectURL(new Blob([item.image], { type: 'image/jpeg' }));
+      delete item.image;
+      return item;
+    });
+    // Preserve optimistic messages that have not reached the server yet.
+    for (const item of current) if (!item.cid || byCid.has(item.cid)) merged.push(item);
+    merged.sort((a, b) => new Date(a.ts) - new Date(b.ts));
+    history[id] = merged;
+    if (peer === id) { renderChat(); markRead(); }
+    renderUsers();
+  });
+}
+
+// Retry only transient failures. Reusing cid makes server-side retries idempotent.
+async function transmitMessage(entry, target) {
+  if (!socket || !socket.connected || entry._sending) {
+    entry.status = 'failed'; entry.retryable = true;
+    if (peer === target) renderChat();
+    return;
+  }
+  entry._sending = true;
+  entry.status = 'sending';
+  try {
+    const payload = { to: Number(target), body: entry.body || '', cid: entry.cid };
+    if (entry.reply) payload.reply = entry.reply;
+    if (entry._imageBlob) payload.image = await entry._imageBlob.arrayBuffer();
+    socket.timeout(10000).emit('message:send', payload, (err, result) => {
+      entry._sending = false;
+      if (err) {
+        if (RANK[entry.status] < RANK.delivered) entry.status = 'failed';
+        entry.retryable = RANK[entry.status] < RANK.delivered;
+        if (entry.retryable && socket.connected && (entry._retryCount || 0) < 2) {
+          entry._retryCount = (entry._retryCount || 0) + 1;
+          setTimeout(() => transmitMessage(entry, target), 500 * entry._retryCount);
+        }
+      } else if (!result || result.error) {
+        entry.status = 'failed'; entry.retryable = false;
+        entry.error = result && result.error;
+      } else {
+        setStatus(entry, 'sent'); entry.retryable = false; entry._retryCount = 0; delete entry.error;
+      }
+      if (peer === target) renderChat();
+    });
+  } catch (e) {
+    entry._sending = false; entry.status = 'failed'; entry.retryable = true;
+    if (peer === target) renderChat();
+  }
+}
+
+function retryPendingMessages() {
+  for (const [target, list] of Object.entries(history)) {
+    for (const entry of list) {
+      if (entry.mine && (entry.status === 'sending' || (entry.status === 'failed' && entry.retryable))) {
+        transmitMessage(entry, Number(target));
+      }
+    }
+  }
 }
 
 // Mark messages from the open chat as read (only while the tab is visible)
@@ -92,6 +170,9 @@ function messageEl(m) {
   const actions = document.createElement('div'); actions.className = 'actions';
   const mk = (label, title, fn) => { const b = document.createElement('button'); b.textContent = label; b.title = title; b.onclick = e => { e.stopPropagation(); fn(); }; return b; };
   actions.append(mk('↩', 'Reply', () => startReply(m)), mk('🗑', 'Delete', () => askDelete(m)));
+  if (m.mine && m.status === 'failed' && m.retryable) {
+    actions.append(mk('↻', 'Retry sending', () => transmitMessage(m, Number(m.to || peer))));
+  }
   d.appendChild(actions);
   d.onclick = () => {
     const was = d.classList.contains('open');
@@ -156,17 +237,11 @@ async function send() {
   if ((!body && !pending) || peer == null) return;
   stopTyping();
   const target = peer, att = pending, reply = replyingTo; pending = null; replyingTo = null;
-  const entry = { cid: newId(), body, mine: true, ts: new Date().toISOString(), status: 'sending', reply };
-  if (att) entry.imgUrl = att.url;
+  const entry = { cid: newId(), to: Number(target), body, mine: true, ts: new Date().toISOString(), status: 'sending', reply, retryable: true };
+  if (att) { entry.imgUrl = att.url; entry._imageBlob = att.blob; }
   (history[target] ||= []).push(entry);
   $('text').value = ''; renderChat(true);
-  const payload = { to: target, body, cid: entry.cid };
-  if (reply) payload.reply = reply;
-  if (att) payload.image = await att.blob.arrayBuffer();
-  socket.emit('message:send', payload, r => {
-    setStatus(entry, r && !r.error ? 'sent' : 'failed');
-    if (peer === target) renderChat();
-  });
+  await transmitMessage(entry, target);
 }
 
 function dropChat(id) { (history[id] || []).forEach(m => m.imgUrl && URL.revokeObjectURL(m.imgUrl)); history[id] = []; unread[id] = 0; }

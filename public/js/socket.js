@@ -7,6 +7,22 @@ async function start() {
   socket = io({ auth: { token } });
   initCallEvents();
 
+  socket.on('connect', () => {
+    reportVisibility();
+    retryPendingMessages();
+    if (peer != null) loadChatHistory(peer);
+    const params = new URLSearchParams(location.search);
+    const callId = params.get('callId');
+    const callAction = params.get('callAction');
+    if (callId) {
+      socket.emit('call:resume', { callId });
+      if (callAction === 'accept' || callAction === 'reject') {
+        window.__pendingCallNotificationAction = { action: callAction, callId };
+      }
+      history.replaceState(null, '', '/');
+    }
+  }); // report visibility and resume a call opened from a notification
+
   /* presence & profiles */
   socket.on('presence:list', ids => {
     online.clear();
@@ -17,14 +33,17 @@ async function start() {
     renderHeader();
   });
 
-  socket.on('presence', ({ id, online: isOnline }) => {
+  socket.on('presence', ({ id, online: isOnline, lastActiveAt }) => {
     id = Number(id);
+    const user = users.find(u => Number(u.id) === id);
 
     if (isOnline) {
       online.add(id);
     } else {
       online.delete(id);
       clearTyping(id);
+      // The server sends this only when the user's final tab/device disconnects.
+      if (user && lastActiveAt) user.lastActiveAt = lastActiveAt;
     }
 
     renderUsers();
@@ -39,7 +58,6 @@ async function start() {
   renderChat();
 
   initPush();
-  socket.on('connect', reportVisibility);                // tell the server whether this tab is in front
   socket.on('connect_error', err => { if (err.message === 'Unauthorized') expireSession(); });
   const qs = new URLSearchParams(location.search);       // opened from a notification
   const openId = Number(qs.get('chat')), forId = Number(qs.get('to'));

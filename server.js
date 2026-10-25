@@ -23,6 +23,23 @@ app.use(express.static(path.join(__dirname, 'public'), {
 app.use('/api', require('./src/routes/auth'));
 app.use('/api', require('./src/routes/profile'));
 app.use('/api', require('./src/routes/push'));
+
+// Optional WebRTC TURN relay configuration. Set CALL_TURN_URLS,
+// CALL_TURN_USERNAME and CALL_TURN_CREDENTIAL in the server environment.
+// For production, prefer time-limited TURN credentials from your provider.
+app.get('/api/call-config', (req, res) => {
+  const urls = (process.env.CALL_TURN_URLS || '').split(',').map(v => v.trim()).filter(Boolean);
+  const iceServers = [];
+  if (urls.length && process.env.CALL_TURN_USERNAME && process.env.CALL_TURN_CREDENTIAL) {
+    iceServers.push({
+      urls,
+      username: process.env.CALL_TURN_USERNAME,
+      credential: process.env.CALL_TURN_CREDENTIAL
+    });
+  }
+  res.set('Cache-Control', 'no-store');
+  res.json({ iceServers });
+});
 app.use(errorHandler);
 
 const server = http.createServer(app);

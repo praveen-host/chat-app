@@ -19,9 +19,16 @@
 
 <div id="app">
   <div id="side">
-    <div id="sideHead"><div class="me" onclick="openProfile()" title="My profile"><span id="meAv"></span><b id="meName"></b></div>
-      <span><button id="bellBtn" class="ghost" style="display:none" onclick="enablePush()">🔔 Alerts</button>
-      <button class="ghost" onclick="logout()">Logout</button></span></div>
+    <div id="sideHead">
+      <div class="me" onclick="openProfile()" title="My profile">
+        <span id="meAv"></span>
+        <span class="me-details"><b id="meName"></b><small id="meLastLogin">Last login: loading…</small></span>
+      </div>
+      <div class="side-actions">
+        <button id="bellBtn" class="ghost icon-button" style="display:none" aria-label="Notifications" title="Notifications" onclick="enablePush()">🔔</button>
+        <button id="logoutBtn" class="ghost icon-button" aria-label="Log out" title="Log out" onclick="logout()"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></button>
+      </div>
+    </div>
     <div id="list"></div>
   </div>
   <div id="main">
@@ -33,6 +40,7 @@
         <span id="peerStatus"></span>
       </div>
       <button id="voiceCallBtn" class="ghost" title="Voice call" onclick="startVoiceCall()">📞 Call</button>
+      <button id="videoCallBtn" class="ghost" title="Video call" onclick="startVideoCall()">🎥 Video</button>
       <button id="delBtn" class="danger" style="display:none" onclick="deleteChat()">Delete chat</button>
     </div>
     <div id="msgs"></div>
@@ -83,13 +91,19 @@
 <div id="callOverlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="callTitle">
   <div class="sheet call-sheet">
     <div class="sheetHead"><b id="callTitle">Voice call</b><button class="ghost" onclick="endVoiceCall()" aria-label="Close call">✕</button></div>
+    <div id="callVideo" style="display:none">
+      <video id="remoteCallVideo" autoplay playsinline muted></video>
+      <video id="localCallVideo" autoplay playsinline muted></video>
+    </div>
     <div class="call-avatar" aria-hidden="true">☎</div>
     <div id="callStatus" role="status" aria-live="polite">Ready</div>
     <audio id="remoteCallAudio" autoplay></audio>
     <div class="call-actions">
       <button id="callAccept" onclick="acceptVoiceCall()">Accept</button>
       <button id="callReject" class="danger" onclick="rejectVoiceCall()">Decline</button>
-      <button id="callMute" class="ghost" onclick="toggleCallMute()">Mute</button>
+      <button id="callMute" class="ghost" onclick="toggleCallMute()">Mute mic</button>
+      <button id="callCamera" class="ghost" style="display:none" onclick="toggleCallCamera()">Camera off</button>
+      <button id="callSpeaker" class="ghost" onclick="toggleSpeakerMute()">Mute speaker</button>
       <button id="callEnd" class="danger" onclick="endVoiceCall()">End call</button>
     </div>
   </div>

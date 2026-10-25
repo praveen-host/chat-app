@@ -2,6 +2,12 @@
 function renderMe() {
   const p = myProfile || { id: me.id, username: me.username, displayName: me.displayName || me.username };
   $('meAv').replaceChildren(avEl(p, 36, false)); $('meName').textContent = p.displayName;
+  const lastLogin = $('meLastLogin');
+  if (lastLogin) {
+    const value = p.lastLoginAt;
+    lastLogin.textContent = value ? 'Last login: ' + new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Last login: unavailable';
+    lastLogin.title = lastLogin.textContent;
+  }
 }
 async function loadMyProfile() {
   const r = await fetch('/api/profile', { headers: authHdr() });
